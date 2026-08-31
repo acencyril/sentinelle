@@ -23,7 +23,14 @@ class SentinelleExtension extends Extension
     public function load(array $configs, ContainerBuilder $conteneur): void
     {
         $config = $this->processConfiguration(new Configuration(), $configs);
-
+        if (empty($config['alerte']['destinataire'])) {
+            throw new \InvalidArgumentException(
+                'Sentinelle : « sentinelle.alerte.destinataire » est absent. '
+                .'Sans destinataire, le bundle détecte sans prévenir personne. '
+                .'Crée config/packages/sentinelle.yaml — voir '
+                .'https://github.com/acencyril/sentinelle-bundle#installation'
+            );
+        }
         $chargeur = new PhpFileLoader($conteneur, new FileLocator(\dirname(__DIR__, 2).'/config'));
         $chargeur->load('services.php');
 
