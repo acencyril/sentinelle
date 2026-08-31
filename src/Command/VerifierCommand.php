@@ -100,7 +100,18 @@ class VerifierCommand extends Command
         }
 
         // --- l'etat courant
-        $actifs = \count($this->blocklist->activeEntries());
+        /* ⚠ CE COMPTAGE N'ÉTAIT PAS PROTÉGÉ, alors qu'il interroge une table
+    dont on vient peut-être de constater l'absence. La commande s'arrêtait
+    donc net au milieu de son rapport : les trois contrôles suivants ne
+    s'exécutaient jamais, et l'on ignorait que la liste blanche était vide.
+
+    *Un outil de diagnostic qui plante sur ce qu'il diagnostique ne
+    diagnostique rien.* */
+        try {
+            $actifs = \count($this->blocklist->activeEntries());
+        } catch (\Throwable) {
+            $actifs = 0;
+        }
         $io->newLine();
         if ($this->essai) {
             $io->warning("Mode d'essai actif : Sentinelle detecte, journalise et alerte, "
