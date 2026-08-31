@@ -27,7 +27,7 @@ class Configuration implements ConfigurationInterface
         $arbre->getRootNode()
             ->children()
                 ->arrayNode('alerte')
-                    ->addDefaultsIfNotSet()
+                    ->isRequired()
                     ->children()
                         ->scalarNode('destinataire')->isRequired()
                             ->info('À qui partent les alertes. Sans destinataire, le bundle détecte sans prévenir.')
