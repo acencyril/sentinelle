@@ -84,17 +84,20 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             'event' => 'kernel.terminate', 'method' => 'onKernelTerminate',
         ]);
 
-    $services->set(ActiviteController::class)
+        $services->set(ActiviteController::class)
         ->args([
             service(VisiteRepository::class),
             service(IpBlocklist::class),
             service(IpIdentifier::class),
+            service('security.authorization_checker'),
+            service('twig'),
+            service('router'),
+            service('security.csrf.token_manager'),
             '%sentinelle.acces.role%',
             '%sentinelle.acces.gabarit_parent%',
             '%sentinelle.acces.route_retour%',
         ])
-        ->tag('controller.service_arguments')
-        ->call('setContainer', [service('service_container')]);
+        ->tag('controller.service_arguments');
 
     $services->set(VerifierCommand::class)
         ->args([

@@ -1,10 +1,11 @@
 # Sentinelle
 
-A Symfony bundle that **logs traffic, recognises attacks, blocks offending
-addresses and alerts you** — without ever blocking a provider your site depends
-on.
+**Blocks attackers, never your mail provider.**
 
-![dashboard](docs/sentinelle-bundle.png)
+It logs every request, recognises exploitation attempts, closes the door on its
+own and alerts you. And it refuses to ban an address your site depends on.
+
+![The Sentinelle dashboard](docs/sentinelle-bundle.png)
 
 *Documentation française : [README.fr.md](README.fr.md)*
 
@@ -94,6 +95,10 @@ return [
 ```yaml
 # config/packages/sentinelle.yaml
 sentinelle:
+    # Dry-run: detects, logs and alerts, but blocks nothing. Leave it on for the
+    # first few weeks — see § 6 below.
+    essai: true
+
     alerte:
         destinataire: '%env(SENTINELLE_ALERT_EMAIL)%'   # recipient
         expediteur:   'no-reply@example.com'            # sender
@@ -150,6 +155,30 @@ scan, earning seven days where it deserved twenty-four hours.
 0 4 * * *  php /path/bin/console sentinelle:purger
 ```
 
+### 6. Start in dry-run
+
+Sentinelle ships with `essai: true` — it detects, logs and alerts, but **blocks
+nothing**. Nobody wires automatic blocking into a production site without knowing
+what it will shut out. Watch the dashboard for a few days, ask yourself "would I
+have wanted to block that one?", then set `essai: false`.
+
+Every avoided block is logged with what would have been decided, duration
+included.
+
+> A mechanism you cannot try without risk will not be tried — it will be
+> installed and switched off at the first incident.
+
+### 7. Check it can do its job
+
+```bash
+php bin/console sentinelle:verifier
+```
+
+Checks that the cache answers, both tables exist, the allowlist is not empty and
+alerts have a valid recipient. Each of these is a way the mechanism can fail
+**silently** — without a cache, counters always return zero, no threshold ever
+fires, and detection is disarmed without anything saying so.
+
 ---
 
 ## The dashboard
@@ -205,7 +234,16 @@ A 155-request scan in 16 seconds must not produce 155 rows. But the quota blocks
 15 would never be reached after 5 probes, and the alerting mechanism would
 neutralise itself at the exact moment it becomes useful.
 
-That is the kind of trap you only see after living through it.
+---
+
+## Behind a reverse proxy
+
+⚠ Without `trusted_proxies` configured, **every request appears to come from the
+same address** — your proxy's. Automatic blocking then cannot tell two visitors
+apart, and a single scanner would get the gateway banned, therefore everyone.
+
+Private ranges are allowlisted by default, precisely to prevent this from
+happening during development. In production, configure `framework.trusted_proxies`.
 
 ---
 
@@ -243,7 +281,6 @@ MIT.
 
 ## Contributing
 
-Detection patterns and the list of known providers improve through use. If your
-provider is missing from the defaults, or you hit an attack pattern that is not
-covered, open an issue — this is exactly the kind of knowledge that is worth
-pooling.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Detection patterns and the list of known
+providers improve through use — if your provider is missing from the defaults,
+that is a one-line pull request.

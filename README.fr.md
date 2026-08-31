@@ -1,10 +1,12 @@
 # Sentinelle
 
-Un bundle Symfony qui **journalise les visites, reconnaît les attaques, bloque les
-adresses fautives et vous prévient** — sans jamais bloquer un prestataire dont
-votre site dépend.
+**Il bloque les attaquants, jamais votre fournisseur de mail.**
 
-![Le tableau de bord](docs/sentinelle-bundle.png)
+Il journalise chaque requête, reconnaît les tentatives d'exploitation, ferme la
+porte tout seul et vous prévient. Et il refuse de bannir une adresse dont votre
+site dépend.
+
+![Le tableau de bord de Sentinelle](docs/sentinelle-bundle.png)
 
 *English documentation: [README.md](README.md)*
 
@@ -75,7 +77,7 @@ Le bouton ne fonctionne pas, et il vous dit pourquoi.
 **Certains chemins ne déclenchent jamais de blocage.** Un webhook qui répond 401
 le temps qu'une clé arrive ne doit pas faire bannir celui qui l'appelle.
 
-> Une protection qui casse une fonction du site protège moins qu'elle ne détruit.
+> Une protection qui casse une fonction du site détruit plus qu'elle ne défend.
 
 ---
 
@@ -96,6 +98,10 @@ return [
 ```yaml
 # config/packages/sentinelle.yaml
 sentinelle:
+    # Mode d'essai : détecte, journalise et alerte, mais ne bloque rien.
+    # À laisser actif les premières semaines — voir le § 6 plus bas.
+    essai: true
+
     alerte:
         destinataire: '%env(SENTINELLE_ALERTE_EMAIL)%'
         expediteur:   'no-reply@mon-site.fr'
@@ -141,11 +147,38 @@ Deux tables : `sentinelle_visite` et `sentinelle_ip_bloquee`.
 
 Sans elle, la table grossit sans fin **et les récidives ne se réinitialisent
 jamais** : une adresse bloquée il y a six mois repasse directement en deuxième
-récidive au premier scan.
+récidive au premier scan, et écope de sept jours là où elle méritait
+vingt-quatre heures.
 
 ```
 0 4 * * *  php /chemin/bin/console sentinelle:purger
 ```
+
+### 6. Démarrer en mode d'essai
+
+Sentinelle s'installe avec `essai: true` — elle détecte, journalise et alerte,
+mais **ne bloque rien**. Personne ne branche un blocage automatique sur un site
+en production sans savoir ce qu'il va fermer. Regarde le tableau de bord quelques
+jours, demande-toi « aurais-je voulu bloquer celle-ci ? », puis passe
+`essai: false`.
+
+Chaque blocage évité part dans les journaux avec ce qui aurait été décidé, durée
+comprise.
+
+> Un mécanisme qu'on ne peut pas essayer sans risque ne sera pas essayé — il sera
+> installé et désactivé au premier incident.
+
+### 7. Vérifier qu'il peut faire son travail
+
+```bash
+php bin/console sentinelle:verifier
+```
+
+Contrôle que le cache répond, que les deux tables existent, que la liste blanche
+n'est pas vide et que les alertes ont un destinataire valide. Chacun de ces
+points est une façon dont le mécanisme peut échouer **en silence** — sans cache,
+les compteurs rendent toujours zéro, aucun seuil ne se déclenche, et la détection
+est désarmée sans que rien ne le signale.
 
 ---
 
@@ -204,7 +237,18 @@ quota ne bloque **que** l'insertion : les compteurs continuent. Sinon le seuil d
 rafale, fixé à 15, ne serait jamais atteint après 5 sondes, et le mécanisme
 d'alerte s'auto-neutraliserait au moment précis où il devient utile.
 
-C'est le genre de piège qu'on ne voit qu'après l'avoir vécu.
+---
+
+## Derrière un reverse-proxy
+
+⚠ Sans `trusted_proxies` configuré, **toutes les requêtes semblent venir de la
+même adresse** — celle de votre proxy. Le blocage automatique ne peut alors plus
+distinguer deux visiteurs, et un seul scanner ferait bannir la passerelle, donc
+tout le monde.
+
+Les plages privées sont en liste blanche d'office, précisément pour que cela
+n'arrive pas en développement. En production, renseignez
+`framework.trusted_proxies`.
 
 ---
 
@@ -243,7 +287,6 @@ MIT.
 
 ## Contribuer
 
-Les motifs de détection et la liste des prestataires connus s'améliorent par
-l'usage. Si votre prestataire manque à la liste par défaut, ou si vous rencontrez
-un motif d'attaque non couvert, ouvrez une issue — c'est exactement le genre de
-connaissance qui gagne à être mise en commun.
+Voir [CONTRIBUTING.md](CONTRIBUTING.md). Les motifs de détection et la liste des
+prestataires connus s'améliorent par l'usage — si le vôtre manque à la liste par
+défaut, c'est une pull request d'une ligne.
