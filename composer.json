@@ -1,0 +1,27 @@
+{
+    "name": "acencyril/sentinelle-bundle",
+    "type": "symfony-bundle",
+    "description": "Journalise les visites, reconnaît les attaques, bloque les IP et alerte par courriel — sans jamais bloquer un prestataire dont le site dépend.",
+    "keywords": ["symfony", "security", "ip-blocking", "intrusion-detection", "waf", "fail2ban"],
+    "license": "MIT",
+    "authors": [
+        { "name": "Cyril", "homepage": "https://github.com/acencyril" }
+    ],
+    "require": {
+        "php": ">=8.2",
+        "doctrine/doctrine-bundle": "^2.11",
+        "doctrine/orm": "^2.17 || ^3.0",
+        "symfony/framework-bundle": "^6.4 || ^7.0",
+        "symfony/mailer": "^6.4 || ^7.0",
+        "symfony/twig-bundle": "^6.4 || ^7.0",
+        "psr/cache": "^2.0 || ^3.0",
+        "psr/log": "^2.0 || ^3.0"
+    },
+    "autoload": {
+        "psr-4": { "Acencyril\\SentinelleBundle\\": "src/" }
+    },
+    "extra": {
+        "branch-alias": { "dev-main": "0.1.x-dev" }
+    },
+    "minimum-stability": "stable"
+}
