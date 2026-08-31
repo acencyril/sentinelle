@@ -1,10 +1,12 @@
 # Sentinelle
 
-Un bundle Symfony qui **journalise les visites, reconnaît les attaques, bloque les
-adresses fautives et vous prévient** — sans jamais bloquer un prestataire dont
-votre site dépend.
+A Symfony bundle that **logs traffic, recognises attacks, blocks offending
+addresses and alerts you** — without ever blocking a provider your site depends
+on.
 
-*English documentation: [README.en.md](README.en.md)*
+![dashboard](docs/sentinelle-bundle.png)
+
+*Documentation française : [README.fr.md](README.fr.md)*
 
 ```bash
 composer require acencyril/sentinelle-bundle
@@ -12,74 +14,72 @@ composer require acencyril/sentinelle-bundle
 
 ---
 
-## Le problème
+## The problem
 
-Un site en production reçoit des sondes en permanence. Des scanners cherchent
-`/.env`, `/wp-login.php`, `/.git/config`. D'autres tentent des injections SQL,
-des traversées de répertoire, du Log4Shell. La plupart n'aboutissent à rien —
-mais on ne le sait qu'après coup, et seulement si on regarde.
+A production site is probed constantly. Scanners look for `/.env`,
+`/wp-login.php`, `/.git/config`. Others attempt SQL injection, directory
+traversal, Log4Shell. Most of it goes nowhere — but you only know that
+afterwards, and only if you look.
 
-Les réponses habituelles ont chacune leur défaut. Lire les journaux du serveur
-web : personne ne le fait tous les jours. `fail2ban` : il travaille sur les
-fichiers de log, hors de l'application, et ne sait rien de vos routes ni de vos
-utilisateurs. Un pare-feu applicatif hébergé : il voit tout votre trafic, et il
-coûte.
+The usual answers each have a flaw. Reading web server logs: nobody does it every
+day. `fail2ban`: it works on log files, outside the application, and knows
+nothing about your routes or your users. A hosted WAF: it sees all your traffic,
+and it costs money.
 
-Sentinelle fait le travail **dans l'application**, où l'on sait qui est
-authentifié, quelle route a répondu, et quel code HTTP est sorti.
-
----
-
-## Ce qu'il fait
-
-**Il enregistre tout**, pas seulement les attaques. Une tentative ne se reconnaît
-pas seule : elle se reconnaît par contraste avec le trafic ordinaire. Sans les
-pages vues, on n'a plus qu'une liste d'alarmes sans échelle, et l'on ne sait pas
-si trois 404 sont un scan ou un lien mort.
-
-**Il qualifie chaque requête** — page vue, page introuvable, accès refusé, sonde,
-tentative d'exploitation — à partir du chemin, des paramètres et du code de
-réponse.
-
-**Il bloque tout seul**, progressivement : 24 heures à la première récidive, 7
-jours à la deuxième, définitif à la troisième. Les blocages expirent, et c'est
-volontaire.
-
-**Il prévient par courriel**, une fois par adresse et par heure au maximum.
-
-**Et il refuse de bloquer ce dont vous dépendez.** C'est la pièce qui manque
-partout ailleurs, et celle qui justifie ce bundle.
+Sentinelle does the work **inside the application**, where you know who is
+authenticated, which route answered, and what status code went out.
 
 ---
 
-## Pourquoi ce dernier point compte
+## What it does
 
-Ce bundle est né d'un incident. Une adresse est apparue dans le tableau de bord,
-signalée comme suspecte après une erreur 401. Elle a été bloquée à la main, d'un
-clic. C'était un serveur de Mailgun : **toute la réception de courriel du site
-serait morte en silence**, et personne ne l'aurait su avant des heures.
+**It records everything**, not just attacks. An attempt cannot be recognised on
+its own: it is recognised by contrast with ordinary traffic. Without the page
+views you are left with a list of alarms and no scale, unable to tell whether
+three 404s are a scan or a dead link.
 
-Le 401 venait d'une clé de signature qui n'était pas encore arrivée dans
-l'environnement du conteneur. Un incident de configuration, pas une attaque.
+**It classifies every request** — page view, not found, access denied, probe,
+exploitation attempt — from the path, the query string and the response code.
 
-D'où trois garde-fous que Sentinelle applique :
+**It blocks on its own**, progressively: 24 hours on the first repeat, 7 days on
+the second, permanent on the third. Blocks expire, and that is deliberate.
 
-**Chaque adresse porte le nom de son propriétaire**, résolu par DNS inverse.
-Vous ne décidez plus devant une suite de chiffres.
+**It emails you**, at most once per address per hour.
 
-**Les prestataires critiques sont refusés au blocage**, automatique *et* manuel.
-Le bouton ne fonctionne pas, et il vous dit pourquoi.
+**And it refuses to block what you depend on.** This is the piece missing
+everywhere else, and the one that justifies this bundle.
 
-**Certains chemins ne déclenchent jamais de blocage.** Un webhook qui répond 401
-le temps qu'une clé arrive ne doit pas faire bannir celui qui l'appelle.
+---
 
-> Une protection qui casse une fonction du site protège moins qu'elle ne détruit.
+## Why that last point matters
+
+This bundle was born from an incident. An address appeared on the dashboard,
+flagged as suspicious after a 401. It was blocked by hand, with one click. It was
+a Mailgun server: **the site's entire inbound mail would have died silently**,
+and nobody would have known for hours.
+
+The 401 came from a signing key that had not yet reached the container's
+environment. A configuration incident, not an attack.
+
+Hence three safeguards Sentinelle enforces:
+
+**Every address carries its owner's name**, resolved by reverse DNS. You no
+longer decide while staring at a string of digits.
+
+**Critical providers are refused for blocking**, automatically *and* manually.
+The button does not work, and it tells you why.
+
+**Some paths never trigger a block.** A webhook returning 401 while a key is
+being deployed must not get the caller banned.
+
+> Protection that breaks a working part of the site destroys more than it
+> defends.
 
 ---
 
 ## Installation
 
-### 1. Enregistrer le bundle
+### 1. Register the bundle
 
 ```php
 // config/bundles.php
@@ -89,35 +89,40 @@ return [
 ];
 ```
 
-### 2. Configurer
+### 2. Configure
 
 ```yaml
 # config/packages/sentinelle.yaml
 sentinelle:
     alerte:
-        destinataire: '%env(SENTINELLE_ALERTE_EMAIL)%'
-        expediteur:   'no-reply@mon-site.fr'
-        nom_du_site:  'Mon Site'
+        destinataire: '%env(SENTINELLE_ALERT_EMAIL)%'   # recipient
+        expediteur:   'no-reply@example.com'            # sender
+        nom_du_site:  'My Site'                         # shown in the subject
 
     acces:
         role:           ROLE_ADMIN
-        gabarit_parent: 'base.html.twig'
-        route_retour:   'tableau_de_bord'
+        gabarit_parent: 'base.html.twig'    # parent template
+        route_retour:   'dashboard'         # back-link route, or null
 
-    jamais_bloquer:
-        # ⚠ À REMPLIR AVANT LA MISE EN PRODUCTION.
-        # Au minimum votre propre adresse de sortie : sans elle, une fausse
-        # manœuvre vous ferme la porte de votre propre site.
+    jamais_bloquer:                          # never block
+        # ⚠ FILL THIS IN BEFORE GOING LIVE.
+        # At minimum your own outbound address: without it, one wrong move
+        # locks you out of your own site.
         ips: '%env(default::SENTINELLE_ALLOWLIST)%'
 
-        # Vos webhooks. Un 401 y est un incident de configuration, pas une attaque.
+        # Your webhooks. A 401 there is a configuration incident, not an attack.
         chemins: ['/api/webhook/', '/stripe/callback']
 
-        # Vos prestataires, en plus de ceux du bundle.
-        prestataires: ['.mon-prestataire-signature.com', '.mon-cdn.net']
+        # Your providers, in addition to the bundle's own list.
+        prestataires: ['.my-signature-provider.com', '.my-cdn.net']
 ```
 
-### 3. Les routes
+The configuration keys are French, matching the source. This is deliberate: the
+comments explaining *why* each safeguard exists are French too, and they are the
+most valuable part of this code. Translating the keys while leaving the reasoning
+behind would be the worse trade.
+
+### 3. Routes
 
 ```yaml
 # config/routes/sentinelle.yaml
@@ -126,112 +131,109 @@ sentinelle:
     type: php
 ```
 
-### 4. Le schéma
+### 4. Schema
 
 ```bash
 php bin/console doctrine:migrations:diff
 php bin/console doctrine:migrations:migrate
 ```
 
-Deux tables : `sentinelle_visite` et `sentinelle_ip_bloquee`.
+Two tables: `sentinelle_visite` and `sentinelle_ip_bloquee`.
 
-### 5. La purge
+### 5. The purge
 
-Sans elle, la table grossit sans fin **et les récidives ne se réinitialisent
-jamais** : une adresse bloquée il y a six mois repasse directement en deuxième
-récidive au premier scan.
+Without it the table grows forever **and repeat counters never reset**: an
+address blocked six months ago comes back straight at strike two on its first
+scan, earning seven days where it deserved twenty-four hours.
 
 ```
-0 4 * * *  php /chemin/bin/console sentinelle:purger
+0 4 * * *  php /path/bin/console sentinelle:purger
 ```
 
 ---
 
-## Le tableau de bord
+## The dashboard
 
-`/admin/activite` — préfixe et rôle configurables.
+`/admin/activite` — prefix and role are configurable.
 
-Le journal des requêtes, filtrable sur les seules lignes suspectes. Les adresses
-bloquées, avec leur motif, leur nombre de récidives et le décompte des requêtes
-refusées depuis. Les adresses les plus actives sur sept jours. Et sous chacune,
-**le nom de son propriétaire** quand le DNS inverse le donne.
+The request log, filterable down to anomalies only. Blocked addresses with their
+reason, strike count and how many requests they have made since. The most active
+addresses over seven days. And under each one, **its owner's name** when reverse
+DNS provides it.
 
-Le blocage manuel est permanent par défaut : une adresse qu'on bloque à la main
-est un choix délibéré, pas une détection.
-
----
-
-## Ce qu'il détecte
-
-**Critique — bloque et alerte immédiatement.** Exécution de code (`php://input`,
-`system(`), injection SQL (`UNION SELECT`, `OR 1=1`), traversée de répertoire,
-Log4Shell (`${jndi:`), désérialisation PHP.
-
-**Sondes — alertent en rafale.** Fichiers sensibles (`.env`, `.sql`, `.pem`),
-répertoires de configuration (`/.git`, `/.aws`, `/.ssh`), chemins WordPress et
-phpMyAdmin, injections de script. Une sonde isolée est du bruit ; quinze en dix
-minutes sont un scan.
-
-**Force brute.** Dix refus d'accès en dix minutes.
-
-Vous pouvez **ajouter** vos propres motifs. Vous ne pouvez pas retirer ceux du
-bundle : *ce qu'on rend configurable, on le rend désactivable par mégarde*, et
-personne ne veut découvrir après coup que son installation avait la détection
-Log4Shell désactivée.
+Manual blocks are permanent by default: an address you block by hand is a
+deliberate decision, not a detection.
 
 ---
 
-## Trois décisions qui méritent d'être expliquées
+## What it detects
 
-### La journalisation ne coûte rien au visiteur
+**Critical — blocks and alerts immediately.** Code execution (`php://input`,
+`system(`), SQL injection (`UNION SELECT`, `OR 1=1`), directory traversal,
+Log4Shell (`${jndi:`), PHP deserialisation.
 
-Elle se fait sur `kernel.terminate`, après l'envoi de la réponse. C'est aussi le
-seul moment où le code HTTP est connu.
+**Probes — alert in bursts.** Sensitive files (`.env`, `.sql`, `.pem`), config
+directories (`/.git`, `/.aws`, `/.ssh`), WordPress and phpMyAdmin paths, script
+injection. One probe is noise; fifteen in ten minutes is a scan.
 
-### Le blocage passe avant le routeur
+**Brute force.** Ten access denials in ten minutes.
 
-L'écouteur est branché en priorité **300**, avant le routeur (32) et le pare-feu
-(8). Une adresse bannie ne consomme ni résolution de route, ni session, ni
-requête en base. Elle reçoit un 403 nu, sans page d'erreur : répondre en détail à
-un scanner lui apprend seulement ce qu'il a déclenché.
-
-### Le quota anti-flood coupe l'écriture, pas le comptage
-
-Un scan de 155 requêtes en 16 secondes ne doit pas produire 155 lignes. Mais le
-quota ne bloque **que** l'insertion : les compteurs continuent. Sinon le seuil de
-rafale, fixé à 15, ne serait jamais atteint après 5 sondes, et le mécanisme
-d'alerte s'auto-neutraliserait au moment précis où il devient utile.
-
-C'est le genre de piège qu'on ne voit qu'après l'avoir vécu.
+You may **add** your own patterns. You may not remove the bundle's: *whatever you
+make configurable, you make accidentally disableable*, and nobody wants to find
+out later that their installation had Log4Shell detection switched off.
 
 ---
 
-## Ce qu'il ne fait pas
+## Three decisions worth explaining
 
-**Il n'inspecte pas le corps des requêtes** — coûteux, et souvent des données
-personnelles qu'on ne veut pas stocker. Seuls le chemin et les paramètres d'URL
-sont examinés.
+### Logging costs the visitor nothing
 
-**Il ne remplace pas votre serveur web.** Les sondes les plus grossières sont
-mieux arrêtées en amont, avant d'atteindre PHP.
+It happens on `kernel.terminate`, after the response has been sent. That is also
+the only moment when the status code is known.
 
-**Il ne vous protège pas d'une faille applicative.** Il vous prévient qu'on la
-cherche.
+### Blocking happens before the router
 
-**Il masque les secrets avant écriture.** Un paramètre `?token=…` est enregistré
-`token=***` : sans cela, chaque appel légitime écrirait un secret en clair dans
-une table consultable depuis l'interface d'administration.
+The listener runs at priority **300**, ahead of the router (32) and the firewall
+(8). A banned address consumes no route resolution, no session, no database
+query. It gets a bare 403 with no error page: answering a scanner in detail only
+teaches it what it triggered.
+
+### The anti-flood quota stops writing, not counting
+
+A 155-request scan in 16 seconds must not produce 155 rows. But the quota blocks
+**only** the insert: the counters keep running. Otherwise the burst threshold of
+15 would never be reached after 5 probes, and the alerting mechanism would
+neutralise itself at the exact moment it becomes useful.
+
+That is the kind of trap you only see after living through it.
 
 ---
 
-## Quand ça se dégrade
+## What it does not do
 
-Toutes les défaillances vont dans le même sens : **laisser passer plutôt que tout
-refuser**.
+**It does not inspect request bodies** — expensive, and often personal data you
+should not be storing. Only the path and query string are examined.
 
-Cache indisponible, base injoignable, échec d'écriture, mail non parti — la
-requête continue et l'erreur part dans les journaux. Un blocage raté est moins
-grave qu'un site qui refuse tout le monde.
+**It does not replace your web server.** The crudest probes are better stopped
+upstream, before they reach PHP.
+
+**It does not protect you from an application flaw.** It tells you someone is
+looking for one.
+
+**It redacts secrets before writing.** A `?token=…` parameter is stored as
+`token=***`: without this, every legitimate call would write a secret in
+cleartext into a table readable from the admin interface.
+
+---
+
+## When things degrade
+
+Every failure mode leans the same way: **let traffic through rather than refuse
+everyone**.
+
+Cache down, database unreachable, write failure, mail not sent — the request
+continues and the error goes to the logs. A missed block is less serious than a
+site that turns everybody away.
 
 ---
 
@@ -239,9 +241,9 @@ grave qu'un site qui refuse tout le monde.
 
 MIT.
 
-## Contribuer
+## Contributing
 
-Les motifs de détection et la liste des prestataires connus s'améliorent par
-l'usage. Si votre prestataire manque à la liste par défaut, ou si vous rencontrez
-un motif d'attaque non couvert, ouvrez une issue — c'est exactement le genre de
-connaissance qui gagne à être mise en commun.
+Detection patterns and the list of known providers improve through use. If your
+provider is missing from the defaults, or you hit an attack pattern that is not
+covered, open an issue — this is exactly the kind of knowledge that is worth
+pooling.
