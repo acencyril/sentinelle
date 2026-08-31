@@ -1,7 +1,7 @@
 {
     "name": "acencyril/sentinelle-bundle",
     "type": "symfony-bundle",
-    "description": "Journalise les visites, reconnaît les attaques, bloque les IP et alerte par courriel — sans jamais bloquer un prestataire dont le site dépend.",
+    "description": "Blocks attackers, never your mail provider. Intrusion detection for Symfony.",
     "keywords": ["symfony", "security", "ip-blocking", "intrusion-detection", "waf", "fail2ban"],
     "license": "MIT",
     "authors": [
