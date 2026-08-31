@@ -60,6 +60,22 @@ class IpBlocklist
         // Nullable : '%env(default::IP_BLOCK_ALLOWLIST)%' vaut null quand la
         // variable n'est pas definie, pas la chaine vide.
         private ?string $allowlist = null,
+        /**
+         * ⚠ MODE D'ESSAI : ON DÉTECTE, ON ALERTE, ON NE BLOQUE PAS.
+         *
+         * Personne de sensé ne branche un blocage automatique sur un site en
+         * production sans savoir ce qu'il va fermer. Les premières semaines, on
+         * veut lire le journal et se demander « aurais-je voulu bloquer
+         * celle-ci ? » — pas découvrir a posteriori qu'un client a été banni.
+         *
+         * Le refus est journalisé avec ce qui AURAIT été décidé, durée
+         * comprise : c'est exactement ce qu'il faut pour juger avant de
+         * basculer.
+         *
+         * *Un mécanisme qu'on ne peut pas essayer sans risque ne sera pas
+         * essayé — il sera installé et desactivé au premier incident.*
+         */
+        private bool $essai = false,
     ) {}
 
     /**
@@ -111,6 +127,17 @@ class IpBlocklist
 
         if ($this->isProtectedProvider($ip)) {
             $this->logger->warning('Blocage refuse : IP d\'un prestataire critique', ['ip' => $ip, 'reason' => $reason]);
+
+            return null;
+        }
+
+        if ($this->essai) {
+            $this->logger->warning('Sentinelle en mode essai : blocage SIMULE', [
+                'ip' => $ip,
+                'reason' => $reason,
+                'source' => $source,
+                'aurait_dure' => $ttl ?? ($source === IpBloquee::SOURCE_MANUAL ? 'permanent' : '24 heures'),
+            ]);
 
             return null;
         }

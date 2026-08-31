@@ -55,6 +55,13 @@ class Configuration implements ConfigurationInterface
                     ->end()
                 ->end()
 
+                ->booleanNode('essai')
+                    ->defaultFalse()
+                    ->info("Mode d'essai : détecte, alerte et journalise, mais ne bloque JAMAIS. "
+                          ."À laisser actif les premières semaines sur un site en production — "
+                          ."on veut voir ce que le bundle AURAIT bloqué avant de lui donner la main.")
+                ->end()
+
                 ->arrayNode('seuils')
                     ->addDefaultsIfNotSet()
                     ->children()

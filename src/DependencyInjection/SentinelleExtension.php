@@ -40,6 +40,7 @@ class SentinelleExtension extends Extension
             'sentinelle.acces.route_retour'    => $config['acces']['route_retour'],
 
             'sentinelle.seuils'                => $config['seuils'],
+            'sentinelle.essai'                 => $config['essai'],
 
             'sentinelle.allowlist'             => $config['jamais_bloquer']['ips'],
             'sentinelle.chemins_exemptes'      => $config['jamais_bloquer']['chemins'],

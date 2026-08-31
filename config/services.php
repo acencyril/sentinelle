@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Acencyril\SentinelleBundle\Controller\ActiviteController;
 use Acencyril\SentinelleBundle\Command\PurgerCommand;
+use Acencyril\SentinelleBundle\Command\VerifierCommand;
 use Acencyril\SentinelleBundle\EventListener\BlockedIpListener;
 use Acencyril\SentinelleBundle\EventListener\SiteActivityListener;
 use Acencyril\SentinelleBundle\Repository\IpBloqueeRepository;
@@ -37,6 +38,7 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             service('logger'),
             service(IpIdentifier::class),
             '%sentinelle.allowlist%',
+            '%sentinelle.essai%',
         ]);
 
     $services->set(AlerteSecurite::class)
@@ -87,15 +89,23 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             service(VisiteRepository::class),
             service(IpBlocklist::class),
             service(IpIdentifier::class),
-            service('security.authorization_checker'),
-            service('twig'),
-            service('router'),
-            service('security.csrf.token_manager'),
             '%sentinelle.acces.role%',
             '%sentinelle.acces.gabarit_parent%',
             '%sentinelle.acces.route_retour%',
         ])
-        ->tag('controller.service_arguments');
+        ->tag('controller.service_arguments')
+        ->call('setContainer', [service('service_container')]);
+
+    $services->set(VerifierCommand::class)
+        ->args([
+            service('doctrine.dbal.default_connection'),
+            service('cache.app'),
+            service(IpBlocklist::class),
+            '%sentinelle.allowlist%',
+            '%sentinelle.essai%',
+            '%sentinelle.alerte.destinataire%',
+        ])
+        ->tag('console.command');
 
     $services->set(PurgerCommand::class)
         ->args([service(IpBlocklist::class), service('doctrine.dbal.default_connection')])
