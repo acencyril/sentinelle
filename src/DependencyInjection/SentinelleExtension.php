@@ -25,9 +25,9 @@ class SentinelleExtension extends Extension
         $config = $this->processConfiguration(new Configuration(), $configs);
         if (empty($config['alert']['recipient'])) {
             throw new \InvalidArgumentException(
-                'Sentinelle : « sentinelle.alert.recipient » est absent. '
-                .'Sans destinataire, le bundle détecte sans prévenir personne. '
-                .'Crée config/packages/sentinelle.yaml — voir '
+                'Sentinelle: "sentinelle.alert.recipient" is missing. '
+                .'Without a recipient, the bundle detects without warning anyone. '
+                .'Create config/packages/sentinelle.yaml — see '
                 .'https://github.com/acencyril/sentinelle-bundle#installation'
             );
         }

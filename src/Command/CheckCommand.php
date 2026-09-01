@@ -86,7 +86,7 @@ class CheckCommand extends Command
             $problems[] = 'Allowlist is empty. Private ranges are protected by default, '
                 .'but not your own outbound address: an automatic block '
                 .'could lock you out of your own site. Set '
-                .'sentinelle.jamais_bloquer.ips avant la mise en production.';
+                .'sentinelle.never_block.ips before going live.';
         } else {
             $io->text(sprintf('<info>ok</info>   %d address(es) allowlisted', \count($declared)));
         }

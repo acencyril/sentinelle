@@ -6,6 +6,21 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-09-01
+
+### Fixed
+- Remaining French strings in the check command, the configuration descriptions
+  and the missing-configuration error.
+- `branch-alias` aligned on `0.3.x-dev`.
+
+### Note for anyone upgrading from 0.2
+
+⚠ `SENTINELLE_ALERTE_EMAIL` became `SENTINELLE_ALERT_EMAIL`, and **Flex will not
+rename it for you**. It never overwrites an existing `.env` entry, so the old
+variable stays and the new one is never added. You get
+`Environment variable not found: "SENTINELLE_ALERT_EMAIL"` with no hint as to
+why. Rename it by hand.
+
 ## [0.3.0] — 2026-09-01
 
 ### ⚠ Breaking

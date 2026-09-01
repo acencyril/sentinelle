@@ -30,7 +30,7 @@ class Configuration implements ConfigurationInterface
                     ->isRequired()
                     ->children()
                         ->scalarNode('recipient')->isRequired()
-                            ->info('À qui partent les alertes. Sans destinataire, le bundle détecte sans prévenir.')
+                            ->info('Where alerts are sent. Without a recipient, the bundle detects without warning anyone.')
                         ->end()
                         ->scalarNode('sender')->defaultValue('no-reply@localhost')->end()
                         ->scalarNode('sender_name')->defaultValue('Sentinelle')->end()

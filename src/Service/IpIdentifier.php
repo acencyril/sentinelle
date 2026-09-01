@@ -31,7 +31,7 @@ class IpIdentifier
      * ⚠ CETTE LISTE EST UN POINT DE DÉPART, PAS UN INVENTAIRE. Elle ne contient
      * que des prestataires très répandus. Les tiens — signature électronique,
      * facturation, hébergeur de médias — se déclarent dans
-     * `sentinelle.jamais_bloquer.prestataires` : ils s'AJOUTENT à ceux-ci.
+     * `sentinelle.never_block.providers` : ils s'AJOUTENT à ceux-ci.
      *
      * Ne pas les y mettre revient à parier que le blocage automatique ne les
      * atteindra jamais. C'est exactement ce pari qui a été perdu une fois.
