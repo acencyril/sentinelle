@@ -6,6 +6,23 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-09-01
+
+### Fixed
+- `$routeur` was declared but `$this->router` was used, in both the controller
+  and the alert mailer: every redirect after a manual block, and the link inside
+  the alert email, threw an undefined-property error.
+- `autoBlock()` read a leftover class constant instead of the injected
+  `never_block.paths`, so the configured exempt paths were silently ignored.
+- Missing `BlockedIp` import in the logger.
+- Six dead threshold constants removed, replaced by configuration in 0.2.0 but
+  never deleted.
+
+### Changed
+- All inline comments and docblocks are now in English.
+- Dates are formatted ISO-style throughout.
+- `--jours` and `--a-blanc` on `sentinelle:purge` became `--days` and `--dry-run`.
+
 ## [0.3.1] — 2026-09-01
 
 ### Fixed
