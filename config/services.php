@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use Acencyril\SentinelleBundle\Controller\ActiviteController;
-use Acencyril\SentinelleBundle\Command\PurgerCommand;
-use Acencyril\SentinelleBundle\Command\VerifierCommand;
+use Acencyril\SentinelleBundle\Controller\ActivityController;
+use Acencyril\SentinelleBundle\Command\PurgeCommand;
+use Acencyril\SentinelleBundle\Command\CheckCommand;
 use Acencyril\SentinelleBundle\EventListener\BlockedIpListener;
 use Acencyril\SentinelleBundle\EventListener\SiteActivityListener;
-use Acencyril\SentinelleBundle\Repository\IpBloqueeRepository;
-use Acencyril\SentinelleBundle\Repository\VisiteRepository;
-use Acencyril\SentinelleBundle\Service\AlerteSecurite;
+use Acencyril\SentinelleBundle\Repository\BlockedIpRepository;
+use Acencyril\SentinelleBundle\Repository\VisitRepository;
+use Acencyril\SentinelleBundle\Service\SecurityAlert;
 use Acencyril\SentinelleBundle\Service\IpBlocklist;
 use Acencyril\SentinelleBundle\Service\IpIdentifier;
 use Acencyril\SentinelleBundle\Service\SiteEventLogger;
@@ -19,37 +19,37 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 return static function (Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator $c): void {
     $services = $c->services()->defaults()->autoconfigure(false);
 
-    $services->set(IpBloqueeRepository::class)
+    $services->set(BlockedIpRepository::class)
         ->args([service('doctrine')])
         ->tag('doctrine.repository_service');
 
-    $services->set(VisiteRepository::class)
+    $services->set(VisitRepository::class)
         ->args([service('doctrine')])
         ->tag('doctrine.repository_service');
 
     $services->set(IpIdentifier::class)
-        ->args([service('cache.app'), '%sentinelle.prestataires_sus%']);
+        ->args([service('cache.app'), '%sentinelle.extra_providers%']);
 
     $services->set(IpBlocklist::class)
         ->args([
-            service(IpBloqueeRepository::class),
+            service(BlockedIpRepository::class),
             service('doctrine.orm.entity_manager'),
             service('cache.app'),
             service('logger'),
             service(IpIdentifier::class),
             '%sentinelle.allowlist%',
-            '%sentinelle.essai%',
+            '%sentinelle.dry_run%',
         ]);
 
-    $services->set(AlerteSecurite::class)
+    $services->set(SecurityAlert::class)
         ->args([
             service('mailer.mailer'),
             service('logger'),
             service('router'),
-            '%sentinelle.alerte.destinataire%',
-            '%sentinelle.alerte.expediteur%',
-            '%sentinelle.alerte.nom_expediteur%',
-            '%sentinelle.alerte.nom_du_site%',
+            '%sentinelle.alert.recipient%',
+            '%sentinelle.alert.sender%',
+            '%sentinelle.alert.sender_name%',
+            '%sentinelle.alert.site_name%',
         ]);
 
     $services->set(SiteEventLogger::class)
@@ -57,14 +57,14 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             service('doctrine.dbal.default_connection'),
             service('cache.app'),
             service('logger'),
-            service(AlerteSecurite::class),
+            service(SecurityAlert::class),
             service(IpBlocklist::class),
-            '%sentinelle.seuils%',
-            '%sentinelle.alerte.repit%',
-            '%sentinelle.chemins_exemptes%',
-            '%sentinelle.motifs_sus%',
-            '%sentinelle.ignorer_sus%',
-            '%sentinelle.acces.prefixe%',
+            '%sentinelle.thresholds%',
+            '%sentinelle.alert.cooldown%',
+            '%sentinelle.exempt_paths%',
+            '%sentinelle.extra_patterns%',
+            '%sentinelle.extra_ignored%',
+            '%sentinelle.access.prefix%',
         ]);
 
     /* ⚠ PRIORITÉ 300, AVANT LE ROUTEUR (32) ET LE PARE-FEU (8). Une adresse
@@ -84,33 +84,33 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             'event' => 'kernel.terminate', 'method' => 'onKernelTerminate',
         ]);
 
-        $services->set(ActiviteController::class)
+        $services->set(ActivityController::class)
         ->args([
-            service(VisiteRepository::class),
+            service(VisitRepository::class),
             service(IpBlocklist::class),
             service(IpIdentifier::class),
             service('security.authorization_checker'),
             service('twig'),
             service('router'),
             service('security.csrf.token_manager'),
-            '%sentinelle.acces.role%',
-            '%sentinelle.acces.gabarit_parent%',
-            '%sentinelle.acces.route_retour%',
+            '%sentinelle.access.role%',
+            '%sentinelle.access.parent_template%',
+            '%sentinelle.access.back_route%',
         ])
         ->tag('controller.service_arguments');
 
-    $services->set(VerifierCommand::class)
+    $services->set(CheckCommand::class)
         ->args([
             service('doctrine.dbal.default_connection'),
             service('cache.app'),
             service(IpBlocklist::class),
             '%sentinelle.allowlist%',
-            '%sentinelle.essai%',
-            '%sentinelle.alerte.destinataire%',
+            '%sentinelle.dry_run%',
+            '%sentinelle.alert.recipient%',
         ])
         ->tag('console.command');
 
-    $services->set(PurgerCommand::class)
+    $services->set(PurgeCommand::class)
         ->args([service(IpBlocklist::class), service('doctrine.dbal.default_connection')])
         ->tag('console.command');
 };

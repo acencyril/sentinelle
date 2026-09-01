@@ -1,0 +1,140 @@
+{# Le gabarit parent vient de la configuration : un bundle ne peut pas savoir
+   comment l'application qui l'installe habille ses pages. #}
+{% extends parent_template %}
+
+{% block title %}Site activity{% endblock %}
+
+{% block body %}
+{% set colour = {
+    'attack_attempt': '#b91c1c', 'ip_blocked': '#1f2937', 'scan_probe': '#c2410c',
+    'access_denied': '#a16207', 'server_error': '#7c3aed', 'not_found': '#64748b',
+    'client_error': '#64748b', 'page_view': '#059669'
+} %}
+{% set nom = {
+    'attack_attempt': "exploitation attempt", 'ip_blocked': 'IP blocked',
+    'scan_probe': 'probe', 'access_denied': 'access denied',
+    'server_error': 'server error', 'not_found': 'not found',
+    'client_error': 'client error', 'page_view': 'page view'
+} %}
+
+{# ⚠ LE NOM DU PROPRIÉTAIRE SOUS L'ADRESSE. Sans lui, le tableau n'affiche que
+   des chiffres et l'on bloque au hasard — c'est exactement ainsi qu'une IP de
+   prestataire critique a été bannie à la main, coupant une fonction du site. #}
+{% macro who(ip, identities) %}
+  {% set id = identities[ip]|default(null) %}
+  {% if id and id.label %}
+    <div style="font-size:.69rem;color:{{ id.critical ? '#b91c1c' : '#6b7280' }}">
+      {{ id.critical ? '⛔ ' }}{{ id.label }}{{ id.critical ? ' — do not block' }}
+    </div>
+  {% elseif id and id.hostname %}
+    <div style="font-size:.69rem;color:#6b7280">{{ id.hostname }}</div>
+  {% elseif id %}
+    <div style="font-size:.69rem;color:#9ca3af;font-style:italic">unknown (no reverse DNS)</div>
+  {% endif %}
+{% endmacro %}
+{% import _self as w %}
+
+<h1>Site activity</h1>
+{% if back_route %}<p><a href="{{ path(back_route) }}">← back</a></p>{% endif %}
+
+{% for message in app.flashes('sentinelle_success') %}
+  <p style="color:#059669">{{ message }}</p>
+{% endfor %}
+{% for message in app.flashes('sentinelle_error') %}
+  <p style="color:#b91c1c">{{ message }}</p>
+{% endfor %}
+
+<h2>Last 24 hours</h2>
+<p>
+  {% for genre, total in summary %}
+    <span style="color:{{ colour[genre]|default('#64748b') }}">
+      {{ nom[genre]|default(genre) }} : <strong>{{ total }}</strong></span>{{ not loop.last ? ' · ' }}
+  {% else %}
+    <span style="color:#9ca3af">Nothing to report.</span>
+  {% endfor %}
+</p>
+
+{% if blocked is not empty %}
+  <h2>Blocked addresses</h2>
+  <table>
+    <tr><th>address</th><th>source</th><th>reason</th><th>until</th><th>strikes</th><th>hits</th><th></th></tr>
+    {% for e in blocked %}
+      <tr>
+        <td>{{ e.ip }}{{ w.who(e.ip, identities) }}</td>
+        <td>{{ e.source == 'manual' ? 'manual' : 'auto' }}</td>
+        <td>{{ e.reason }}</td>
+        <td>{{ e.isPermanent ? 'permanent' : e.expiresAt|date('d/m/Y H:i') }}</td>
+        <td>{{ e.strikes > 1 ? e.strikes : '—' }}</td>
+        <td>{{ e.hitCount ?: '—' }}</td>
+        <td>
+          <form method="post" action="{{ path('sentinelle_unblock') }}">
+            <input type="hidden" name="_token" value="{{ csrf_token('sentinelle_block') }}">
+            <input type="hidden" name="ip" value="{{ e.ip }}">
+            <button type="submit">unblock</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+  </table>
+{% endif %}
+
+{% if topIps is not empty %}
+  <h2>Most active addresses over 7 days</h2>
+  <table>
+    <tr><th>address</th><th>anomalies</th><th>last</th><th></th></tr>
+    {% for r in topIps %}
+      <tr>
+        <td>{{ r.ip }}{{ w.who(r.ip, identities) }}</td>
+        <td>{{ r.total }}</td>
+        <td>{{ r.last|date('d/m/Y H:i') }}</td>
+        <td>
+          {% if blockedByIp[r.ip] is defined %}
+            <span style="color:#9ca3af">already blocked</span>
+          {% else %}
+            <form method="post" action="{{ path('sentinelle_block') }}">
+              <input type="hidden" name="_token" value="{{ csrf_token('sentinelle_block') }}">
+              <input type="hidden" name="ip" value="{{ r.ip }}">
+              <button type="submit">block</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+  </table>
+{% endif %}
+
+<h2>Log</h2>
+<p>
+  <a href="{{ path('sentinelle_activity') }}">all</a> ·
+  <a href="{{ path('sentinelle_activity', {filter: 'suspicious'}) }}">anomalies only</a>
+</p>
+<table>
+  <tr><th>when</th><th>kind</th><th>address</th><th>url</th><th>status</th><th>agent</th></tr>
+  {% for e in events %}
+    <tr>
+      <td>{{ e.createdAt|date('d/m H:i:s') }}</td>
+      <td style="color:{{ colour[e.eventType]|default('#64748b') }}">{{ nom[e.eventType]|default(e.eventType) }}</td>
+      <td>{{ e.ip ?: '—' }}{% if e.ip %}{{ w.who(e.ip, identities) }}{% endif %}</td>
+      <td style="word-break:break-all">
+        {{ e.url }}
+        {# ⚠ LE MOTIF ÉTAIT DANS LA QUERY, ET LA QUERY N'ÉTAIT PAS AFFICHÉE.
+           `insert()` n'enregistre que le chemin ; ce qui a déclenché la
+           détection vit dans `meta`. Deux tentatives d'exploitation
+           apparaissaient donc comme deux lignes « / » identiques.
+           *Une alerte doit montrer ce qui a été tenté, pas seulement qu'il
+           s'est passé quelque chose.* #}
+        {% if e.meta.pattern is defined %}
+          <div style="font-size:.69rem;color:#b91c1c">pattern: {{ e.meta.pattern }}</div>
+        {% endif %}
+        {% if e.meta.query is defined %}
+          <div style="font-size:.69rem;color:#9ca3af">?{{ e.meta.query|slice(0, 120) }}</div>
+        {% endif %}
+      </td>
+      <td>{{ e.statusCode ?: '—' }}</td>
+      <td style="font-size:.69rem;color:#9ca3af">{{ e.userAgent|slice(0, 60) }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6">No visits recorded.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

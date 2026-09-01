@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Acencyril\SentinelleBundle\Controller;
 
-use Acencyril\SentinelleBundle\Entity\IpBloquee;
-use Acencyril\SentinelleBundle\Entity\Visite;
-use Acencyril\SentinelleBundle\Repository\VisiteRepository;
+use Acencyril\SentinelleBundle\Entity\BlockedIp;
+use Acencyril\SentinelleBundle\Entity\Visit;
+use Acencyril\SentinelleBundle\Repository\VisitRepository;
 use Acencyril\SentinelleBundle\Service\IpBlocklist;
 use Acencyril\SentinelleBundle\Service\IpIdentifier;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -40,54 +40,54 @@ use Twig\Environment;
  * ⚠ NI ROLE NI GABARIT EN DUR non plus : un bundle qui impose son role force
  * chaque projet a adopter une hierarchie de droits qu'il n'a pas choisie.
  */
-class ActiviteController
+class ActivityController
 {
     public function __construct(
-        private VisiteRepository $visites,
+        private VisitRepository $visits,
         private IpBlocklist $blocklist,
         private IpIdentifier $identifier,
-        private AuthorizationCheckerInterface $droits,
+        private AuthorizationCheckerInterface $authChecker,
         private Environment $twig,
         private UrlGeneratorInterface $routeur,
-        private CsrfTokenManagerInterface $jetons,
+        private CsrfTokenManagerInterface $csrf,
         private string $role,
-        private string $gabaritParent,
-        private ?string $routeRetour,
+        private string $parentTemplate,
+        private ?string $backRoute,
     ) {
     }
 
     public function index(Request $request): Response
     {
-        $this->exigeLeDroit();
+        $this->denyUnlessGranted();
 
-        $filtre = $request->query->getString('filtre', 'tout');
-        $bloquees = $this->blocklist->activeEntries();
-        $evenements = $this->visites->findLatest($filtre);
-        $tetes = $this->visites->topSuspiciousIps(new \DateTimeImmutable('-7 days'));
+        $filter = $request->query->getString('filter', 'tout');
+        $blocked = $this->blocklist->activeEntries();
+        $events = $this->visits->findLatest($filter);
+        $topIps = $this->visits->topSuspiciousIps(new \DateTimeImmutable('-7 days'));
 
         /* ⚠ L'ORDRE COMPTE. Le nombre de resolutions inverses est plafonne par
            affichage : les IP sur lesquelles on va DECIDER doivent etre nommees
            en premier, meme si le plafond tombe avant la fin du journal. Une
            adresse sans nom est une adresse qu'on bloque au hasard. */
         $ips = [
-            ...array_column($tetes, 'ip'),
-            ...array_map(static fn (IpBloquee $b): string => $b->getIp(), $bloquees),
-            ...array_filter(array_map(static fn (Visite $e): ?string => $e->getIp(), $evenements)),
+            ...array_column($topIps, 'ip'),
+            ...array_map(static fn (BlockedIp $b): string => $b->getIp(), $blocked),
+            ...array_filter(array_map(static fn (Visit $e): ?string => $e->getIp(), $events)),
         ];
 
-        return new Response($this->twig->render('@Sentinelle/activite.html.twig', [
-            'evenements' => $evenements,
-            'filtre' => $filtre,
-            'resume' => $this->visites->summarySince(new \DateTimeImmutable('-24 hours')),
-            'tetes' => $tetes,
-            'bloquees' => $bloquees,
-            'identites' => $this->identifier->identifyMany($ips),
-            'bloqueesParIp' => array_combine(
-                array_map(static fn (IpBloquee $b): string => $b->getIp(), $bloquees),
-                $bloquees
+        return new Response($this->twig->render('@Sentinelle/activity.html.twig', [
+            'events' => $events,
+            'filter' => $filter,
+            'summary' => $this->visits->summarySince(new \DateTimeImmutable('-24 hours')),
+            'topIps' => $topIps,
+            'blocked' => $blocked,
+            'identities' => $this->identifier->identifyMany($ips),
+            'blockedByIp' => array_combine(
+                array_map(static fn (BlockedIp $b): string => $b->getIp(), $blocked),
+                $blocked
             ),
-            'gabarit_parent' => $this->gabaritParent,
-            'route_retour' => $this->routeRetour,
+            'parent_template' => $this->parentTemplate,
+            'back_route' => $this->backRoute,
         ]));
     }
 
@@ -95,64 +95,64 @@ class ActiviteController
      * Blocage manuel. Permanent par defaut : une IP qu'on bloque a la main est
      * un choix delibere, pas une detection.
      */
-    public function bloquer(Request $request): Response
+    public function block(Request $request): Response
     {
-        $this->exigeLeDroit();
+        $this->denyUnlessGranted();
         $ip = trim($request->request->getString('ip'));
 
-        if (!$this->jetonValide($request)) {
-            $this->dis($request, 'erreur', 'Jeton invalide, action annulee.');
+        if (!$this->isTokenValid($request)) {
+            $this->flash($request, 'error', 'Invalid token, action cancelled.');
         } elseif (false === filter_var($ip, \FILTER_VALIDATE_IP)) {
-            $this->dis($request, 'erreur', sprintf('« %s » n\'est pas une adresse IP valide.', $ip));
+            $this->flash($request, 'error', sprintf('"%s" is not a valid IP address.', $ip));
         } elseif ($this->blocklist->isAllowed($ip)) {
-            $this->dis($request, 'erreur', sprintf('%s est en liste blanche et ne peut pas etre bloquee.', $ip));
-        } elseif (null === $this->blocklist->block($ip, 'Blocage manuel depuis le tableau de bord', IpBloquee::SOURCE_MANUAL)) {
+            $this->flash($request, 'error', sprintf('%s is allowlisted and cannot be blocked.', $ip));
+        } elseif (null === $this->blocklist->block($ip, 'Manual block from the dashboard', BlockedIp::SOURCE_MANUAL)) {
             /* ⚠ C'EST ICI QUE L'INCIDENT SE REJOUERAIT. Une IP de prestataire
                critique, reconnue a son DNS inverse : la bloquer couperait une
                fonction du site. Le bouton refuse, et il dit pourquoi. */
-            $this->dis($request, 'erreur', sprintf(
-                '%s appartient a un prestataire dont le site depend et ne peut pas etre bloquee.',
+            $this->flash($request, 'error', sprintf(
+                '%s belongs to a provider the site depends on and cannot be blocked.',
                 $ip
             ));
         } else {
-            $this->dis($request, 'ok', sprintf('%s bloquee.', $ip));
+            $this->flash($request, 'success', sprintf('%s blocked.', $ip));
         }
 
-        return new RedirectResponse($this->routeur->generate('sentinelle_activite'));
+        return new RedirectResponse($this->router->generate('sentinelle_activity'));
     }
 
-    public function debloquer(Request $request): Response
+    public function unblock(Request $request): Response
     {
-        $this->exigeLeDroit();
+        $this->denyUnlessGranted();
         $ip = trim($request->request->getString('ip'));
 
-        if (!$this->jetonValide($request)) {
-            $this->dis($request, 'erreur', 'Jeton invalide, action annulee.');
+        if (!$this->isTokenValid($request)) {
+            $this->flash($request, 'error', 'Invalid token, action cancelled.');
         } elseif ($this->blocklist->unblock($ip)) {
-            $this->dis($request, 'ok', sprintf('%s debloquee.', $ip));
+            $this->flash($request, 'success', sprintf('%s unblocked.', $ip));
         } else {
-            $this->dis($request, 'erreur', sprintf('%s n\'etait pas bloquee.', $ip));
+            $this->flash($request, 'error', sprintf('%s was not blocked.', $ip));
         }
 
-        return new RedirectResponse($this->routeur->generate('sentinelle_activite'));
+        return new RedirectResponse($this->router->generate('sentinelle_activity'));
     }
 
-    private function exigeLeDroit(): void
+    private function denyUnlessGranted(): void
     {
-        if (!$this->droits->isGranted($this->role)) {
+        if (!$this->authChecker->isGranted($this->role)) {
             throw new AccessDeniedException();
         }
     }
 
-    private function jetonValide(Request $request): bool
+    private function isTokenValid(Request $request): bool
     {
-        return $this->jetons->isTokenValid(
-            new CsrfToken('sentinelle_bloquer', $request->request->getString('_token'))
+        return $this->csrf->isTokenValid(
+            new CsrfToken('sentinelle_block', $request->request->getString('_token'))
         );
     }
 
     /** Les messages passent par la session, quand il y en a une. */
-    private function dis(Request $request, string $genre, string $message): void
+    private function flash(Request $request, string $genre, string $message): void
     {
         if ($request->hasSession()) {
             $request->getSession()->getFlashBag()->add('sentinelle_'.$genre, $message);

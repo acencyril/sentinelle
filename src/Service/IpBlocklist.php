@@ -2,8 +2,8 @@
 
 namespace Acencyril\SentinelleBundle\Service;
 
-use Acencyril\SentinelleBundle\Entity\IpBloquee;
-use Acencyril\SentinelleBundle\Repository\IpBloqueeRepository;
+use Acencyril\SentinelleBundle\Entity\BlockedIp;
+use Acencyril\SentinelleBundle\Repository\BlockedIpRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Log\LoggerInterface;
@@ -32,7 +32,7 @@ class IpBlocklist
     private const CACHE_TTL = 300;
 
     /**
-     * Jamais bloquees, quoi qu'elles fassent.
+     * Jamais blocked, quoi qu'elles fassent.
      *
      * Les plages privees couvrent le reseau Docker : sans reverse-proxy
      * correctement configure, toutes les requetes semblent venir de la passerelle
@@ -52,7 +52,7 @@ class IpBlocklist
     private ?array $configuredAllowlist = null;
 
     public function __construct(
-        private IpBloqueeRepository $repository,
+        private BlockedIpRepository $repository,
         private EntityManagerInterface $em,
         private CacheItemPoolInterface $cache,
         private LoggerInterface $logger,
@@ -75,7 +75,7 @@ class IpBlocklist
          * *Un mécanisme qu'on ne peut pas essayer sans risque ne sera pas
          * essayé — il sera installé et desactivé au premier incident.*
          */
-        private bool $essai = false,
+        private bool $dryRun = false,
     ) {}
 
     /**
@@ -117,26 +117,26 @@ class IpBlocklist
      * Idempotent : rappeler avec la meme IP pendant que le blocage court ne
      * cree pas de recidive, seul un nouveau blocage apres expiration compte.
      */
-    public function block(string $ip, string $reason, string $source = IpBloquee::SOURCE_AUTO, ?string $ttl = null): ?IpBloquee
+    public function block(string $ip, string $reason, string $source = BlockedIp::SOURCE_AUTO, ?string $ttl = null): ?BlockedIp
     {
         if ($this->isAllowed($ip)) {
-            $this->logger->info('Blocage ignore : IP en liste blanche', ['ip' => $ip, 'reason' => $reason]);
+            $this->logger->info('Block skipped: IP is allowlisted', ['ip' => $ip, 'reason' => $reason]);
 
             return null;
         }
 
         if ($this->isProtectedProvider($ip)) {
-            $this->logger->warning('Blocage refuse : IP d\'un prestataire critique', ['ip' => $ip, 'reason' => $reason]);
+            $this->logger->warning('Block refused: IP belongs to a critical provider', ['ip' => $ip, 'reason' => $reason]);
 
             return null;
         }
 
-        if ($this->essai) {
-            $this->logger->warning('Sentinelle en mode essai : blocage SIMULE', [
+        if ($this->dryRun) {
+            $this->logger->warning('Sentinelle dry-run: block SIMULATED', [
                 'ip' => $ip,
                 'reason' => $reason,
                 'source' => $source,
-                'aurait_dure' => $ttl ?? ($source === IpBloquee::SOURCE_MANUAL ? 'permanent' : '24 heures'),
+                'would_have_lasted' => $ttl ?? ($source === BlockedIp::SOURCE_MANUAL ? 'permanent' : '24 hours'),
             ]);
 
             return null;
@@ -149,7 +149,7 @@ class IpBlocklist
                 return $existing;
             }
 
-            $entry = $existing ?? new IpBloquee($ip, $reason, $source);
+            $entry = $existing ?? new BlockedIp($ip, $reason, $source);
             $strikes = $existing !== null ? $existing->getStrikes() + 1 : 1;
 
             $entry->setReason($reason)->setSource($source)->setStrikes($strikes);
@@ -159,7 +159,7 @@ class IpBlocklist
             $this->em->flush();
             $this->invalidate();
 
-            $this->logger->warning('IP bloquee', [
+            $this->logger->warning('IP blocked', [
                 'ip'         => $ip,
                 'reason'     => $reason,
                 'source'     => $source,
@@ -171,7 +171,7 @@ class IpBlocklist
         } catch (\Throwable $e) {
             // Le blocage est une protection, pas une fonction vitale : s'il
             // echoue, la requete en cours doit continuer normalement.
-            $this->logger->error('Echec du blocage d\'IP', ['ip' => $ip, 'error' => $e->getMessage()]);
+            $this->logger->error('Failed to block IP', ['ip' => $ip, 'error' => $e->getMessage()]);
 
             return null;
         }
@@ -188,7 +188,7 @@ class IpBlocklist
         $this->em->flush();
         $this->invalidate();
 
-        $this->logger->info('IP debloquee', ['ip' => $ip]);
+        $this->logger->info('IP unblocked', ['ip' => $ip]);
 
         return true;
     }
@@ -206,12 +206,12 @@ class IpBlocklist
                 $this->em->flush();
             }
         } catch (\Throwable $e) {
-            $this->logger->warning('Echec du comptage de hit sur IP bloquee', ['ip' => $ip, 'error' => $e->getMessage()]);
+            $this->logger->warning('Failed to count hit on blocked IP', ['ip' => $ip, 'error' => $e->getMessage()]);
         }
     }
 
     /**
-     * @return IpBloquee[]
+     * @return BlockedIp[]
      */
     public function activeEntries(): array
     {
@@ -245,7 +245,7 @@ class IpBlocklist
         } catch (\Throwable $e) {
             // Cache ou base indisponible : on laisse passer. Un blocage rate est
             // moins grave qu'un site qui refuse tout le monde.
-            $this->logger->warning('Lecture de la blocklist impossible', ['error' => $e->getMessage()]);
+            $this->logger->warning('Could not read the blocklist', ['error' => $e->getMessage()]);
 
             return [];
         }
@@ -270,7 +270,7 @@ class IpBlocklist
         }
 
         // Un blocage manuel sans duree explicite est un choix delibere : permanent.
-        if ($source === IpBloquee::SOURCE_MANUAL) {
+        if ($source === BlockedIp::SOURCE_MANUAL) {
             return null;
         }
 

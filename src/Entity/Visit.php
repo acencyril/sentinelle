@@ -5,11 +5,11 @@ namespace Acencyril\SentinelleBundle\Entity;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
-#[ORM\Table(name: "sentinelle_visite")]
-#[ORM\Index(name: "idx_sentinelle_visite_created", columns: ["created_at"])]
-#[ORM\Index(name: "idx_sentinelle_visite_ip_created", columns: ["ip", "created_at"])]
-#[ORM\Index(name: "idx_sentinelle_visite_type_created", columns: ["event_type", "created_at"])]
-class Visite
+#[ORM\Table(name: "sentinelle_visit")]
+#[ORM\Index(name: "idx_sentinelle_visit_created", columns: ["created_at"])]
+#[ORM\Index(name: "idx_sentinelle_visit_ip_created", columns: ["ip", "created_at"])]
+#[ORM\Index(name: "idx_sentinelle_visit_type_created", columns: ["event_type", "created_at"])]
+class Visit
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column(type: "integer")]
     private ?int $id = null;

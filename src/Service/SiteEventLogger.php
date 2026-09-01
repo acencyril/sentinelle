@@ -97,23 +97,23 @@ class SiteEventLogger
         private Connection $connection,
         private CacheItemPoolInterface $cache,
         private LoggerInterface $logger,
-        private AlerteSecurite $notifier,
+        private SecurityAlert $notifier,
         private IpBlocklist $blocklist,
         /** @var array{rafale:int,rafale_fenetre:int,bruteforce:int,bruteforce_fenetre:int,flood_max:int,flood_fenetre:int} */
-        private array $seuils = [],
-        private int $repitAlerte = 3600,
+        private array $thresholds = [],
+        private int $alertCooldown = 3600,
         /** @var string[] */
-        private array $cheminsExemptes = ['/api/webhook/'],
+        private array $exemptPaths = ['/api/webhook/'],
         /** @var array<string,string> */
-        private array $motifsAjoutes = [],
+        private array $extraPatterns = [],
         /** @var string[] */
-        private array $ignorerAjoutes = [],
-        private string $prefixeAdmin = '/admin/activite',
+        private array $extraIgnored = [],
+        private string $adminPrefix = '/admin/activity',
     ) {
-        $this->seuils += [
-            'rafale' => 15, 'rafale_fenetre' => 600,
-            'bruteforce' => 10, 'bruteforce_fenetre' => 600,
-            'flood_max' => 5, 'flood_fenetre' => 3600,
+        $this->thresholds += [
+            'burst' => 15, 'burst_window' => 600,
+            'bruteforce' => 10, 'bruteforce_window' => 600,
+            'flood_max' => 5, 'flood_window' => 3600,
         ];}
 
     /**
@@ -139,23 +139,23 @@ class SiteEventLogger
     public function logRequest(Request $request, Response $response): void
     {
         try {
-            $this->journalise($request, $response);
+            $this->record($request, $response);
         } catch (\Throwable $e) {
-            $this->logger->error('Sentinelle : journalisation impossible', [
+            $this->logger->error('Sentinelle: logging failed', [
                 'erreur'  => $e->getMessage(),
-                'fichier' => $e->getFile().':'.$e->getLine(),
+                'file' => $e->getFile().':'.$e->getLine(),
             ]);
         }
     }
 
-    private function journalise(Request $request, Response $response): void
+    private function record(Request $request, Response $response): void
     {
         $path = $request->getPathInfo();
 
         // ⚠ ON AJOUTE, ON NE REMPLACE PAS. Le prefixe d'administration est
         // configurable : l'outil d'observation ne doit jamais se journaliser
         // lui-meme, quel que soit l'endroit ou le projet l'a monte.
-        $ignores = array_merge(self::IGNORED_PREFIXES, $this->ignorerAjoutes, [$this->prefixeAdmin]);
+        $ignores = array_merge(self::IGNORED_PREFIXES, $this->extraIgnored, [$this->adminPrefix]);
         foreach ($ignores as $prefix) {
             if (str_starts_with($path, $prefix)) {
                 return;
@@ -223,7 +223,7 @@ class SiteEventLogger
     private function insert(string $type, ?string $url, ?int $status, ?string $ip, ?string $userAgent, array $meta): void
     {
         try {
-            $this->connection->insert('sentinelle_visite', [
+            $this->connection->insert('sentinelle_visit', [
                 'event_type'  => mb_substr($type, 0, 255),
                 'url'         => $url !== null ? mb_substr($url, 0, 255) : null,
                 'status_code' => $status,
@@ -234,7 +234,7 @@ class SiteEventLogger
             ]);
         } catch (\Throwable $e) {
             // Journaliser ne doit jamais casser une requete, ni fermer l'EntityManager.
-            $this->logger->warning('site_event insert failed', ['error' => $e->getMessage()]);
+            $this->logger->warning('sentinelle_visit insert failed', ['error' => $e->getMessage()]);
         }
     }
 
@@ -258,7 +258,7 @@ class SiteEventLogger
     private function matchCritical(string $haystack): ?string
     {
         // Les motifs du projet s'ajoutent : on n'en retire jamais.
-        foreach (array_merge(self::CRITICAL_PATTERNS, $this->motifsAjoutes) as $name => $pattern) {
+        foreach (array_merge(self::CRITICAL_PATTERNS, $this->extraPatterns) as $name => $pattern) {
             if (preg_match($pattern, $haystack) === 1) {
                 return $name;
             }
@@ -283,7 +283,7 @@ class SiteEventLogger
      */
     private function isFlooding(string $ip, string $type): bool
     {
-        return $this->bump('flood_' . $ip . '_' . $type, $this->seuils['flood_fenetre']) > $this->seuils['flood_max'];
+        return $this->bump('flood_' . $ip . '_' . $type, $this->thresholds['flood_window']) > $this->thresholds['flood_max'];
     }
 
     private function evaluateAlerts(
@@ -304,21 +304,21 @@ class SiteEventLogger
         $detail = null;
 
         if ($critical !== null) {
-            $reason = 'Tentative d\'exploitation';
-            $detail = 'Motif detecte : ' . $critical;
+            $reason = 'Exploitation attempt';
+            $detail = 'Pattern matched: ' . $critical;
         } elseif ($type === 'access_denied') {
-            $count = $this->bump('bf_' . $ip, $this->seuils['bruteforce_fenetre']);
+            $count = $this->bump('bf_' . $ip, $this->thresholds['bruteforce_window']);
             // >= et non == : deux requetes concurrentes peuvent faire sauter la
             // valeur exacte. Le cooldown par IP empeche deja la repetition du mail.
-            if ($count >= $this->seuils['bruteforce']) {
-                $reason = 'Bruteforce probable';
-                $detail = sprintf('%d refus d\'acces en moins de %d minutes', $count, $this->seuils['bruteforce_fenetre'] / 60);
+            if ($count >= $this->thresholds['bruteforce']) {
+                $reason = 'Likely brute force';
+                $detail = sprintf('%d access denials in under %d minutes', $count, $this->thresholds['bruteforce_window'] / 60);
             }
         } elseif ($type === 'scan_probe' || $type === 'not_found') {
-            $count = $this->bump('burst_' . $ip, $this->seuils['rafale_fenetre']);
-            if ($count >= $this->seuils['rafale']) {
-                $reason = 'Scan automatise';
-                $detail = sprintf('%d sondes en moins de %d minutes', $count, $this->seuils['rafale_fenetre'] / 60);
+            $count = $this->bump('burst_' . $ip, $this->thresholds['burst_window']);
+            if ($count >= $this->thresholds['burst']) {
+                $reason = 'Automated scan';
+                $detail = sprintf('%d probes in under %d minutes', $count, $this->thresholds['burst_window'] / 60);
             }
         }
 
@@ -338,12 +338,12 @@ class SiteEventLogger
 
         if ($blocked !== null) {
             $detail .= sprintf(
-                ' — IP bloquee automatiquement (%s)',
-                $blocked->isPermanent() ? 'definitivement' : 'jusqu\'au ' . $blocked->getExpiresAt()->format('d/m/Y H:i')
+                ' — IP blocked automatically (%s)',
+                $blocked->isPermanent() ? 'permanently' : 'until ' . $blocked->getExpiresAt()->format('d/m/Y H:i')
             );
         }
 
-        $this->notifier->prevenir([
+        $this->notifier->notify([
             'reason'     => $reason,
             'detail'     => $detail,
             'ip'         => $ip,
@@ -362,7 +362,7 @@ class SiteEventLogger
     {
         foreach (self::NEVER_AUTOBLOCK_PREFIXES as $prefix) {
             if (str_starts_with($path, $prefix)) {
-                $this->logger->info('Blocage automatique ecarte : chemin exempte', ['ip' => $ip, 'path' => $path]);
+                $this->logger->info('Automatic block skipped: exempt path', ['ip' => $ip, 'path' => $path]);
 
                 return null;
             }
@@ -399,7 +399,7 @@ class SiteEventLogger
             if ($item->isHit()) {
                 return false;
             }
-            $item->set(1)->expiresAfter($this->repitAlerte);
+            $item->set(1)->expiresAfter($this->alertCooldown);
             $this->cache->save($item);
 
             return true;

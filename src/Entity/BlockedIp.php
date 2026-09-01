@@ -2,7 +2,7 @@
 
 namespace Acencyril\SentinelleBundle\Entity;
 
-use Acencyril\SentinelleBundle\Repository\IpBloqueeRepository;
+use Acencyril\SentinelleBundle\Repository\BlockedIpRepository;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
@@ -17,10 +17,10 @@ use Doctrine\ORM\Mapping as ORM;
  * IP scannees sont des machines compromises ou des adresses cloud recyclees,
  * les bannir a vie finirait par fermer la porte a de vrais visiteurs.
  */
-#[ORM\Entity(repositoryClass: IpBloqueeRepository::class)]
-#[ORM\Table(name: 'sentinelle_ip_bloquee')]
-#[ORM\Index(name: 'idx_sentinelle_ip_expires', columns: ['expires_at'])]
-class IpBloquee
+#[ORM\Entity(repositoryClass: BlockedIpRepository::class)]
+#[ORM\Table(name: 'sentinelle_blocked_ip')]
+#[ORM\Index(name: 'idx_sentinelle_blocked_ip_expires', columns: ['expires_at'])]
+class BlockedIp
 {
     public const SOURCE_AUTO = 'auto';
     public const SOURCE_MANUAL = 'manual';

@@ -20,43 +20,43 @@ use Symfony\Component\DependencyInjection\Loader\PhpFileLoader;
  */
 class SentinelleExtension extends Extension
 {
-    public function load(array $configs, ContainerBuilder $conteneur): void
+    public function load(array $configs, ContainerBuilder $container): void
     {
         $config = $this->processConfiguration(new Configuration(), $configs);
-        if (empty($config['alerte']['destinataire'])) {
+        if (empty($config['alert']['recipient'])) {
             throw new \InvalidArgumentException(
-                'Sentinelle : « sentinelle.alerte.destinataire » est absent. '
+                'Sentinelle : « sentinelle.alert.recipient » est absent. '
                 .'Sans destinataire, le bundle détecte sans prévenir personne. '
                 .'Crée config/packages/sentinelle.yaml — voir '
                 .'https://github.com/acencyril/sentinelle-bundle#installation'
             );
         }
-        $chargeur = new PhpFileLoader($conteneur, new FileLocator(\dirname(__DIR__, 2).'/config'));
-        $chargeur->load('services.php');
+        $loader = new PhpFileLoader($container, new FileLocator(\dirname(__DIR__, 2).'/config'));
+        $loader->load('services.php');
 
         foreach ([
-            'sentinelle.alerte.destinataire'   => $config['alerte']['destinataire'],
-            'sentinelle.alerte.expediteur'     => $config['alerte']['expediteur'],
-            'sentinelle.alerte.nom_expediteur' => $config['alerte']['nom_expediteur'],
-            'sentinelle.alerte.nom_du_site'    => $config['alerte']['nom_du_site'],
-            'sentinelle.alerte.repit'          => $config['alerte']['repit'],
+            'sentinelle.alert.recipient'   => $config['alert']['recipient'],
+            'sentinelle.alert.sender'     => $config['alert']['sender'],
+            'sentinelle.alert.sender_name' => $config['alert']['sender_name'],
+            'sentinelle.alert.site_name'    => $config['alert']['site_name'],
+            'sentinelle.alert.cooldown'          => $config['alert']['cooldown'],
 
-            'sentinelle.acces.role'            => $config['acces']['role'],
-            'sentinelle.acces.prefixe'         => $config['acces']['prefixe'],
-            'sentinelle.acces.gabarit_parent'  => $config['acces']['gabarit_parent'],
-            'sentinelle.acces.route_retour'    => $config['acces']['route_retour'],
+            'sentinelle.access.role'            => $config['access']['role'],
+            'sentinelle.access.prefix'         => $config['access']['prefix'],
+            'sentinelle.access.parent_template'  => $config['access']['parent_template'],
+            'sentinelle.access.back_route'    => $config['access']['back_route'],
 
-            'sentinelle.seuils'                => $config['seuils'],
-            'sentinelle.essai'                 => $config['essai'],
+            'sentinelle.thresholds'                => $config['thresholds'],
+            'sentinelle.dry_run'                 => $config['dry_run'],
 
-            'sentinelle.allowlist'             => $config['jamais_bloquer']['ips'],
-            'sentinelle.chemins_exemptes'      => $config['jamais_bloquer']['chemins'],
+            'sentinelle.allowlist'             => $config['never_block']['ips'],
+            'sentinelle.exempt_paths'      => $config['never_block']['paths'],
             // fusionnés, jamais substitués — voir la remarque en tête de classe
-            'sentinelle.prestataires_sus'      => $config['jamais_bloquer']['prestataires'],
-            'sentinelle.motifs_sus'            => $config['motifs_critiques'],
-            'sentinelle.ignorer_sus'           => $config['ignorer'],
+            'sentinelle.extra_providers'      => $config['never_block']['providers'],
+            'sentinelle.extra_patterns'            => $config['critical_patterns'],
+            'sentinelle.extra_ignored'           => $config['ignore'],
         ] as $nom => $valeur) {
-            $conteneur->setParameter($nom, $valeur);
+            $container->setParameter($nom, $valeur);
         }
     }
 

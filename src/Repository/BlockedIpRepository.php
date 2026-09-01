@@ -2,21 +2,21 @@
 
 namespace Acencyril\SentinelleBundle\Repository;
 
-use Acencyril\SentinelleBundle\Entity\IpBloquee;
+use Acencyril\SentinelleBundle\Entity\BlockedIp;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
  * @extends ServiceEntityRepository<BlockedIp>
  */
-class IpBloqueeRepository extends ServiceEntityRepository
+class BlockedIpRepository extends ServiceEntityRepository
 {
     public function __construct(ManagerRegistry $registry)
     {
-        parent::__construct($registry, IpBloquee::class);
+        parent::__construct($registry, BlockedIp::class);
     }
 
-    public function findOneByIp(string $ip): ?IpBloquee
+    public function findOneByIp(string $ip): ?BlockedIp
     {
         return $this->findOneBy(['ip' => $ip]);
     }
@@ -24,7 +24,7 @@ class IpBloqueeRepository extends ServiceEntityRepository
     /**
      * Blocages encore actifs, les plus recents d'abord.
      *
-     * @return IpBloquee[]
+     * @return BlockedIp[]
      */
     public function findActive(): array
     {

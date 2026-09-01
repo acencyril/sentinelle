@@ -2,21 +2,21 @@
 
 namespace Acencyril\SentinelleBundle\Repository;
 
-use Acencyril\SentinelleBundle\Entity\Visite;
+use Acencyril\SentinelleBundle\Entity\Visit;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
- * @extends ServiceEntityRepository<IpBloquee>
+ * @extends ServiceEntityRepository<BlockedIp>
  */
-class VisiteRepository extends ServiceEntityRepository
+class VisitRepository extends ServiceEntityRepository
 {
     public function __construct(ManagerRegistry $registry)
     {
-        parent::__construct($registry, Visite::class);
+        parent::__construct($registry, Visit::class);
     }
 
-    public function save(Visite $siteEvent, bool $flush = false): void
+    public function save(Visit $siteEvent, bool $flush = false): void
     {
         $this->getEntityManager()->persist($siteEvent);
         if ($flush) {
@@ -24,7 +24,7 @@ class VisiteRepository extends ServiceEntityRepository
         }
     }
 
-    public function remove(Visite $siteEvent, bool $flush = false): void
+    public function remove(Visit $siteEvent, bool $flush = false): void
     {
         $this->getEntityManager()->remove($siteEvent);
         if ($flush) {
@@ -43,9 +43,9 @@ class VisiteRepository extends ServiceEntityRepository
 
         /* ⚠ « tout » ET « all » DÉSIGNAIENT LA MÊME CHOSE SANS SE CONNAÎTRE. Le
            contrôleur et le gabarit ont été traduits en français, pas ce dépôt :
-           avec `filtre=tout`, la requête cherchait les visites dont le TYPE vaut
+           avec `filter=tout`, la requête cherchait les visites dont le TYPE vaut
            littéralement « tout », et n'en trouvait aucune. Le résumé, qui ne
-           passe pas par ce filtre, affichait pourtant treize lignes.
+           passe pas par ce filter, affichait pourtant treize lignes.
            On accepte les deux, faute de pouvoir renommer sans casser les URL
            déjà partagées. *Une traduction partielle est pire qu'aucune : elle
            produit un désaccord silencieux entre deux moitiés du même code.* */
@@ -78,7 +78,7 @@ class VisiteRepository extends ServiceEntityRepository
     }
 
     /**
-     * IP les plus actives sur les evenements anormaux.
+     * IP les plus actives sur les events anormaux.
      *
      * @return array<int,array{ip:string,total:int,last:\DateTimeInterface}>
      */

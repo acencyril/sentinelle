@@ -79,23 +79,23 @@ class IpIdentifier
     private const MAX_LOOKUPS_PER_BATCH = 30;
 
     /**
-     * @param array<string,string> $ajouts suffixe => libelle, tous critiques.
+     * @param array<string,string> $extra suffixe => libelle, tous critiques.
      *                                     Fusionnes avec KNOWN_SUFFIXES, jamais
      *                                     substitues : on n'enleve pas une
      *                                     protection par configuration.
      */
     public function __construct(
         private CacheItemPoolInterface $cache,
-        private array $ajouts = [],
+        private array $extra = [],
     ) {}
 
     /**
      * @return array<string,array{label:string,critical:bool}>
      */
-    private function suffixes(): array
+    private function knownSuffixes(): array
     {
         $tous = self::KNOWN_SUFFIXES;
-        foreach ($this->ajouts as $suffixe => $libelle) {
+        foreach ($this->extra as $suffixe => $libelle) {
             // ⚠ LES AJOUTS DU PROJET SONT TOUJOURS CRITIQUES. Declarer un
             // prestataire, c'est dire « ne le bloque jamais » ; il n'y aurait
             // aucune raison de l'inscrire pour autre chose.
@@ -179,7 +179,7 @@ class IpIdentifier
         $identity = ['hostname' => $hostname, 'label' => null, 'critical' => false];
 
         if ($hostname !== null) {
-            foreach ($this->suffixes() as $suffix => $known) {
+            foreach ($this->knownSuffixes() as $suffix => $known) {
                 if (str_ends_with($hostname, $suffix)) {
                     $identity['label'] = $known['label'];
                     $identity['critical'] = $known['critical'];

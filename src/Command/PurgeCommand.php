@@ -28,10 +28,10 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * *Une methode ecrite mais jamais appelee est une intention, pas un mecanisme.*
  */
 #[AsCommand(
-    name: 'sentinelle:purger',
-    description: 'Efface les blocages expires et les visites anciennes'
+    name: 'sentinelle:purge',
+    description: 'Purge expired blocks and old visits'
 )]
-class PurgerCommand extends Command
+class PurgeCommand extends Command
 {
     public function __construct(
         private IpBlocklist $blocklist,
@@ -44,9 +44,9 @@ class PurgerCommand extends Command
     {
         $this
             ->addOption('jours', null, InputOption::VALUE_REQUIRED,
-                'Anciennete des visites a effacer', '30')
+                'Age in days of visits to delete', '30')
             ->addOption('a-blanc', null, InputOption::VALUE_NONE,
-                'Compter sans rien effacer');
+                'Count without deleting anything');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -56,14 +56,14 @@ class PurgerCommand extends Command
         $avant = new \DateTimeImmutable(sprintf('-%d days', $jours));
         $blanc = (bool) $input->getOption('a-blanc');
 
-        $visites = (int) $this->connection->fetchOne(
-            'SELECT COUNT(*) FROM sentinelle_visite WHERE created_at < :avant',
+        $visits = (int) $this->connection->fetchOne(
+            'SELECT COUNT(*) FROM sentinelle_visit WHERE created_at < :avant',
             ['avant' => $avant->format('Y-m-d H:i:s')]
         );
 
         if ($blanc) {
-            $io->text(sprintf('%d visite(s) de plus de %d jours seraient effacees.', $visites, $jours));
-            $io->text('Blocages expires : comptage non effectue en mode a blanc.');
+            $io->text(sprintf('%d visit(s) older than %d days would be deleted.', $visits, $jours));
+            $io->text('Expired blocks: not counted in dry-run mode.');
 
             return Command::SUCCESS;
         }
@@ -71,13 +71,13 @@ class PurgerCommand extends Command
         $bloquages = $this->blocklist->purgeExpired(new \DateTimeImmutable());
 
         $this->connection->executeStatement(
-            'DELETE FROM sentinelle_visite WHERE created_at < :avant',
+            'DELETE FROM sentinelle_visit WHERE created_at < :avant',
             ['avant' => $avant->format('Y-m-d H:i:s')]
         );
 
         $io->success(sprintf(
-            '%d blocage(s) expire(s) et %d visite(s) de plus de %d jours effaces.',
-            $bloquages, $visites, $jours
+            '%d expired block(s) and %d visit(s) older than %d days deleted.',
+            $bloquages, $visits, $jours
         ));
 
         return Command::SUCCESS;

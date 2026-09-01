@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Acencyril\SentinelleBundle\Service;
 
-use Acencyril\SentinelleBundle\Entity\IpBloquee;
+use Acencyril\SentinelleBundle\Entity\BlockedIp;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Address;
@@ -31,33 +31,33 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  * *Une alerte doit dire l'état du monde au moment où elle part, pas celui qu'il
  * avait quand on l'a écrite.*
  */
-class AlerteSecurite
+class SecurityAlert
 {
     public function __construct(
         private MailerInterface $mailer,
         private LoggerInterface $logger,
         private UrlGeneratorInterface $routeur,
-        private string $destinataire,
-        private string $expediteur,
-        private string $nomExpediteur,
-        private string $nomDuSite,
+        private string $recipient,
+        private string $sender,
+        private string $senderName,
+        private string $siteName,
     ) {
     }
 
     /**
-     * @param array{reason:string,detail:?string,ip:string,path:string,method:string,query:?string,status:int,user_agent:?string} $contexte
+     * @param array{reason:string,detail:?string,ip:string,path:string,method:string,query:?string,status:int,user_agent:?string} $context
      */
-    public function prevenir(array $contexte, ?IpBloquee $bloquee = null): void
+    public function notify(array $context, ?BlockedIp $blocked = null): void
     {
         $e = static fn (?string $v): string => htmlspecialchars((string) ($v ?? '—'), \ENT_QUOTES, 'UTF-8');
 
         $lignes = [
-            'Motif' => $e($contexte['detail'] ?? null),
-            'IP' => $e($contexte['ip']),
-            'Requête' => $e($contexte['method'].' '.$contexte['path']),
-            'Paramètres' => $e($contexte['query'] ?? null),
-            'Réponse' => $e((string) $contexte['status']),
-            'Agent' => $e($contexte['user_agent'] ?? null),
+            'Pattern' => $e($context['detail'] ?? null),
+            'IP' => $e($context['ip']),
+            'Request' => $e($context['method'].' '.$context['path']),
+            'Query' => $e($context['query'] ?? null),
+            'Response' => $e((string) $context['status']),
+            'User agent' => $e($context['user_agent'] ?? null),
             'Date' => $e((new \DateTimeImmutable())->format('d/m/Y H:i:s')),
         ];
 
@@ -70,55 +70,55 @@ class AlerteSecurite
         }
 
         // L'état réel du blocage, pas une consigne périmée.
-        if (null === $bloquee) {
-            $suite = "Cette IP n'a <strong>pas</strong> été bloquée automatiquement "
-                .'(liste blanche, prestataire protégé, ou chemin exempté).';
-        } elseif ($bloquee->estDefinitive()) {
-            $suite = 'Cette IP est bloquée <strong>définitivement</strong>.';
+        if (null === $blocked) {
+            $footer = "This IP was <strong>not</strong> blocked automatically "
+                .'(allowlisted, protected provider, or exempt path).';
+        } elseif ($blocked->isPermanent()) {
+            $footer = 'This IP is blocked <strong>permanently</strong>.';
         } else {
-            $suite = 'Cette IP est bloquée jusqu\'au <strong>'
-                .$bloquee->getJusquA()->format('d/m/Y à H:i').'</strong>.';
+            $footer = 'This IP is blocked until <strong>'
+                .$blocked->getExpiresAt()->format('d/m/Y à H:i').'</strong>.';
         }
 
         try {
-            $lien = $this->routeur->generate('sentinelle_activite', [],
+            $link = $this->router->generate('sentinelle_activity', [],
                 UrlGeneratorInterface::ABSOLUTE_URL);
-            $suite .= ' <a href="'.$lien.'">Voir le journal et la débloquer</a>.';
+            $footer .= ' <a href="'.$link.'">See the log and unblock it</a>.';
         } catch (\Throwable) {
             // ⚠ SANS DOMAINE CONFIGURÉ, `ABSOLUTE_URL` ÉCHOUE. Une alerte sans
             // lien reste une alerte utile ; une alerte qui ne part pas parce que
             // le routeur ignore le nom d'hôte ne protège personne.
         }
 
-        $sujet = sprintf('🚨 Alerte sécurité %s — %s (%s)',
-            $this->nomDuSite, $contexte['reason'], $contexte['ip']);
+        $sujet = sprintf('🚨 Security alert %s — %s (%s)',
+            $this->siteName, $context['reason'], $context['ip']);
 
-        $this->envoyer($sujet, <<<HTML
+        $this->send($sujet, <<<HTML
             <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:16px">
               <div style="background:#b91c1c;color:#fff;padding:16px;border-radius:8px 8px 0 0;text-align:center">
-                <strong style="font-size:18px">🚨 {$e($contexte['reason'])}</strong>
+                <strong style="font-size:18px">🚨 {$e($context['reason'])}</strong>
               </div>
               <div style="background:#fff;padding:16px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
                 <table style="width:100%;font-size:13px">{$corpsLignes}</table>
-                <p style="font-size:12px;color:#64748b;margin:16px 0 0">{$suite}<br>
-                Une seule alerte par IP et par heure.</p>
+                <p style="font-size:12px;color:#64748b;margin:16px 0 0">{$footer}<br>
+                At most one alert per IP per hour.</p>
               </div>
             </div>
             HTML);
     }
 
-    private function envoyer(string $sujet, string $html): void
+    private function send(string $sujet, string $html): void
     {
         try {
             $this->mailer->send((new Email())
-                ->from(new Address($this->expediteur, $this->nomExpediteur))
-                ->to($this->destinataire)
+                ->from(new Address($this->sender, $this->senderName))
+                ->to($this->recipient)
                 ->subject($sujet)
                 ->html($html));
         } catch (\Throwable $e) {
             // ⚠ UNE ALARME QUI CASSE LE SITE PROTÈGE MOINS QU'ELLE NE DÉTRUIT.
-            $this->logger->warning('Alerte de sécurité non envoyée', [
-                'sujet' => $sujet, 'erreur' => $e->getMessage(),
+            $this->logger->warning('Security alert not sent', [
+                'sujet' => $sujet, 'error' => $e->getMessage(),
             ]);
         }
     }
