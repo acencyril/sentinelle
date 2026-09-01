@@ -6,7 +6,77 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+## [0.3.0] — 2026-09-01
+
+### ⚠ Breaking
+
+The whole codebase moved to English. **Configuration keys, table names, route
+names and the admin path all changed.** Upgrading from 0.2 requires editing your
+configuration and running a migration.
+
+There is no automatic upgrade path, and that is deliberate: silently renaming
+tables under a running site is worse than an error message that tells you what
+to do.
+
+#### Configuration keys
+
+| 0.2 | 0.3 |
+|---|---|
+| `essai` | `dry_run` |
+| `alerte` | `alert` |
+| `alerte.destinataire` | `alert.recipient` |
+| `alerte.expediteur` | `alert.sender` |
+| `alerte.nom_expediteur` | `alert.sender_name` |
+| `alerte.nom_du_site` | `alert.site_name` |
+| `alerte.repit` | `alert.cooldown` |
+| `acces` | `access` |
+| `acces.prefixe` | `access.prefix` |
+| `acces.gabarit_parent` | `access.parent_template` |
+| `acces.route_retour` | `access.back_route` |
+| `seuils` | `thresholds` |
+| `seuils.rafale` | `thresholds.burst` |
+| `seuils.rafale_fenetre` | `thresholds.burst_window` |
+| `seuils.bruteforce_fenetre` | `thresholds.bruteforce_window` |
+| `jamais_bloquer` | `never_block` |
+| `jamais_bloquer.chemins` | `never_block.paths` |
+| `jamais_bloquer.prestataires` | `never_block.providers` |
+| `motifs_critiques` | `critical_patterns` |
+| `ignorer` | `ignore` |
+
+#### Environment variable
+
+`SENTINELLE_ALERTE_EMAIL` → `SENTINELLE_ALERT_EMAIL`
+
+#### Tables
+
+`sentinelle_visite` → `sentinelle_visit`
+`sentinelle_ip_bloquee` → `sentinelle_blocked_ip`
+
+Run `doctrine:migrations:diff` then `migrate`. **The generated migration drops
+the old tables** — export your data first if you want to keep it.
+
+#### Commands
+
+`sentinelle:purger` → `sentinelle:purge`
+`sentinelle:verifier` → `sentinelle:check`
+
+#### Routes and admin path
+
+`/admin/activite` → `/admin/activity`, and the route names
+`sentinelle_activite`, `_bloquer`, `_debloquer` become `sentinelle_activity`,
+`_block`, `_unblock`.
+
+### Changed
+- Class names: `IpBloquee` → `BlockedIp`, `Visite` → `Visit`,
+  `AlerteSecurite` → `SecurityAlert`, `ActiviteController` → `ActivityController`,
+  and their repositories accordingly.
+- Log messages, dashboard labels, email contents and command output are now in
+  English.
+
+### Note
+Inline comments remain in French. They explain *why* each safeguard exists, and
+several come from real incidents — that reasoning is the most valuable part of
+this code, and translating it badly would be worse than leaving it.
 
 ## [0.2.1] — 2026-08-31
 

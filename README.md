@@ -95,37 +95,36 @@ return [
 ```yaml
 # config/packages/sentinelle.yaml
 sentinelle:
-    # Dry-run: detects, logs and alerts, but blocks nothing. Leave it on for the
-    # first few weeks — see § 6 below.
-    essai: true
+  # Dry-run: detects, logs and alerts, but blocks nothing. Leave it on for the
+  # first few weeks — see § 6 below.
+  dry_run: true
 
-    alerte:
-        destinataire: '%env(SENTINELLE_ALERT_EMAIL)%'   # recipient
-        expediteur:   'no-reply@example.com'            # sender
-        nom_du_site:  'My Site'                         # shown in the subject
+  alert:
+    recipient:   '%env(SENTINELLE_ALERT_EMAIL)%'
+    sender:      'no-reply@example.com'
+    site_name:   'My Site'
 
-    acces:
-        role:           ROLE_ADMIN
-        gabarit_parent: 'base.html.twig'    # parent template
-        route_retour:   'dashboard'         # back-link route, or null
+  access:
+    role:            ROLE_ADMIN
+    parent_template: 'base.html.twig'
+    back_route:      'dashboard'     # or null
 
-    jamais_bloquer:                          # never block
-        # ⚠ FILL THIS IN BEFORE GOING LIVE.
-        # At minimum your own outbound address: without it, one wrong move
-        # locks you out of your own site.
-        ips: '%env(default::SENTINELLE_ALLOWLIST)%'
+  never_block:
+    # ⚠ FILL THIS IN BEFORE GOING LIVE.
+    # At minimum your own outbound address: without it, one wrong move
+    # locks you out of your own site.
+    ips: '%env(default::SENTINELLE_ALLOWLIST)%'
 
-        # Your webhooks. A 401 there is a configuration incident, not an attack.
-        chemins: ['/api/webhook/', '/stripe/callback']
+    # Your webhooks. A 401 there is a configuration incident, not an attack.
+    paths: ['/api/webhook/', '/stripe/callback']
 
-        # Your providers, in addition to the bundle's own list.
-        prestataires: ['.my-signature-provider.com', '.my-cdn.net']
+    # Your providers, in addition to the bundle's own list.
+    providers: ['.my-signature-provider.com', '.my-cdn.net']
 ```
 
-The configuration keys are French, matching the source. This is deliberate: the
-comments explaining *why* each safeguard exists are French too, and they are the
-most valuable part of this code. Translating the keys while leaving the reasoning
-behind would be the worse trade.
+Inline comments in the source remain in French. They explain *why* each safeguard
+exists, and several come from real incidents — that reasoning is the most
+valuable part of this code.
 
 ### 3. Routes
 
@@ -143,7 +142,7 @@ php bin/console doctrine:migrations:diff
 php bin/console doctrine:migrations:migrate
 ```
 
-Two tables: `sentinelle_visite` and `sentinelle_ip_bloquee`.
+Two tables: `sentinelle_visit` and `sentinelle_blocked_ip`.
 
 ### 5. The purge
 
@@ -152,15 +151,15 @@ address blocked six months ago comes back straight at strike two on its first
 scan, earning seven days where it deserved twenty-four hours.
 
 ```
-0 4 * * *  php /path/bin/console sentinelle:purger
+0 4 * * *  php /path/bin/console sentinelle:purge
 ```
 
 ### 6. Start in dry-run
 
-Sentinelle ships with `essai: true` — it detects, logs and alerts, but **blocks
+Sentinelle ships with `dry_run: true` — it detects, logs and alerts, but **blocks
 nothing**. Nobody wires automatic blocking into a production site without knowing
 what it will shut out. Watch the dashboard for a few days, ask yourself "would I
-have wanted to block that one?", then set `essai: false`.
+have wanted to block that one?", then set `dry_run: false`.
 
 Every avoided block is logged with what would have been decided, duration
 included.
@@ -171,7 +170,7 @@ included.
 ### 7. Check it can do its job
 
 ```bash
-php bin/console sentinelle:verifier
+php bin/console sentinelle:check
 ```
 
 Checks that the cache answers, both tables exist, the allowlist is not empty and
@@ -183,7 +182,7 @@ fires, and detection is disarmed without anything saying so.
 
 ## The dashboard
 
-`/admin/activite` — prefix and role are configurable.
+`/admin/activity` — prefix and role are configurable.
 
 The request log, filterable down to anomalies only. Blocked addresses with their
 reason, strike count and how many requests they have made since. The most active
@@ -243,7 +242,8 @@ same address** — your proxy's. Automatic blocking then cannot tell two visitor
 apart, and a single scanner would get the gateway banned, therefore everyone.
 
 Private ranges are allowlisted by default, precisely to prevent this from
-happening during development. In production, configure `framework.trusted_proxies`.
+happening during development. In production, configure
+`framework.trusted_proxies`.
 
 ---
 
@@ -272,6 +272,13 @@ everyone**.
 Cache down, database unreachable, write failure, mail not sent — the request
 continues and the error goes to the logs. A missed block is less serious than a
 site that turns everybody away.
+
+---
+
+## Upgrading from 0.2
+
+Version 0.3 renamed everything to English — configuration keys, tables, routes
+and the admin path. See [CHANGELOG.md](CHANGELOG.md) for the full mapping.
 
 ---
 

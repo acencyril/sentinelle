@@ -100,30 +100,34 @@ return [
 sentinelle:
     # Mode d'essai : détecte, journalise et alerte, mais ne bloque rien.
     # À laisser actif les premières semaines — voir le § 6 plus bas.
-    essai: true
+    dry_run: true
 
-    alerte:
-        destinataire: '%env(SENTINELLE_ALERTE_EMAIL)%'
-        expediteur:   'no-reply@mon-site.fr'
-        nom_du_site:  'Mon Site'
+    alert:
+        recipient: '%env(SENTINELLE_ALERT_EMAIL)%'
+        sender:    'no-reply@mon-site.fr'
+        site_name: 'Mon Site'
 
-    acces:
-        role:           ROLE_ADMIN
-        gabarit_parent: 'base.html.twig'
-        route_retour:   'tableau_de_bord'
+    access:
+        role:            ROLE_ADMIN
+        parent_template: 'base.html.twig'
+        back_route:      'tableau_de_bord'   # ou null
 
-    jamais_bloquer:
+    never_block:
         # ⚠ À REMPLIR AVANT LA MISE EN PRODUCTION.
         # Au minimum votre propre adresse de sortie : sans elle, une fausse
         # manœuvre vous ferme la porte de votre propre site.
         ips: '%env(default::SENTINELLE_ALLOWLIST)%'
 
         # Vos webhooks. Un 401 y est un incident de configuration, pas une attaque.
-        chemins: ['/api/webhook/', '/stripe/callback']
+        paths: ['/api/webhook/', '/stripe/callback']
 
         # Vos prestataires, en plus de ceux du bundle.
-        prestataires: ['.mon-prestataire-signature.com', '.mon-cdn.net']
+        providers: ['.mon-prestataire-signature.com', '.mon-cdn.net']
 ```
+
+Les clés sont en anglais depuis la version 0.3 ; les commentaires du code restent
+en français, parce qu'ils expliquent *pourquoi* chaque garde-fou existe et que
+plusieurs viennent d'incidents réels.
 
 ### 3. Les routes
 
@@ -141,7 +145,7 @@ php bin/console doctrine:migrations:diff
 php bin/console doctrine:migrations:migrate
 ```
 
-Deux tables : `sentinelle_visite` et `sentinelle_ip_bloquee`.
+Deux tables : `sentinelle_visit` et `sentinelle_blocked_ip`.
 
 ### 5. La purge
 
@@ -151,16 +155,16 @@ récidive au premier scan, et écope de sept jours là où elle méritait
 vingt-quatre heures.
 
 ```
-0 4 * * *  php /chemin/bin/console sentinelle:purger
+0 4 * * *  php /chemin/bin/console sentinelle:purge
 ```
 
 ### 6. Démarrer en mode d'essai
 
-Sentinelle s'installe avec `essai: true` — elle détecte, journalise et alerte,
+Sentinelle s'installe avec `dry_run: true` — elle détecte, journalise et alerte,
 mais **ne bloque rien**. Personne ne branche un blocage automatique sur un site
 en production sans savoir ce qu'il va fermer. Regarde le tableau de bord quelques
 jours, demande-toi « aurais-je voulu bloquer celle-ci ? », puis passe
-`essai: false`.
+`dry_run: false`.
 
 Chaque blocage évité part dans les journaux avec ce qui aurait été décidé, durée
 comprise.
@@ -171,7 +175,7 @@ comprise.
 ### 7. Vérifier qu'il peut faire son travail
 
 ```bash
-php bin/console sentinelle:verifier
+php bin/console sentinelle:check
 ```
 
 Contrôle que le cache répond, que les deux tables existent, que la liste blanche
@@ -184,7 +188,7 @@ est désarmée sans que rien ne le signale.
 
 ## Le tableau de bord
 
-`/admin/activite` — préfixe et rôle configurables.
+`/admin/activity` — préfixe et rôle configurables.
 
 Le journal des requêtes, filtrable sur les seules lignes suspectes. Les adresses
 bloquées, avec leur motif, leur nombre de récidives et le décompte des requêtes
@@ -278,6 +282,14 @@ refuser**.
 Cache indisponible, base injoignable, échec d'écriture, mail non parti — la
 requête continue et l'erreur part dans les journaux. Un blocage raté est moins
 grave qu'un site qui refuse tout le monde.
+
+---
+
+## Migrer depuis la 0.2
+
+La version 0.3 a tout renommé en anglais — clés de configuration, tables, routes
+et chemin d'administration. La correspondance complète est dans
+[CHANGELOG.md](CHANGELOG.md).
 
 ---
 
