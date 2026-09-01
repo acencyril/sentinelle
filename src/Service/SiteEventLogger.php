@@ -2,6 +2,7 @@
 
 namespace Acencyril\SentinelleBundle\Service;
 
+use Acencyril\SentinelleBundle\Entity\BlockedIp;
 use Acencyril\SentinelleBundle\EventListener\BlockedIpListener;
 use Doctrine\DBAL\Connection;
 use Psr\Cache\CacheItemPoolInterface;
@@ -10,34 +11,37 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Journalisation des requetes dans site_event.
+ * Records requests into sentinelle_visit.
  *
- * Appele depuis SiteActivityListener sur kernel.terminate : la reponse est deja
- * partie chez le client, l'insertion ne coute donc rien en latence percue.
+ * Called from SiteActivityListener on kernel.terminate: the response has
+ * already reached the client, so the insert costs nothing in perceived latency.
  *
- * Trois objectifs, dans cet ordre :
- *   1. ne pas laisser un scanner remplir la table (anti-flood par IP) ;
- *   2. qualifier ce qui est anormal (code HTTP + type d'evenement) ;
- *   3. alerter par mail sur ce qui est reellement dangereux.
+ * Three goals, in that order:
+ *   1. keep a scanner from filling the table (per-IP anti-flood);
+ *   2. classify what is abnormal (status code and event type);
+ *   3. send an email about what is genuinely dangerous.
  *
- * Insertion en DBAL brut et non via l'ORM : ecriture append-only appelee sur
- * chaque requete, inutile de charger l'UnitOfWork, et immunise contre un
- * EntityManager deja ferme par une exception plus tot dans la requete.
+ * Written through raw DBAL rather than the ORM: this is an append-only write
+ * happening on every request, there is no point loading the UnitOfWork, and it
+ * is immune to an EntityManager already closed by an earlier exception.
  */
 class SiteEventLogger
 {
-    // Bruit pur, jamais journalise.
-    // Le prefixe d'administration s'y ajoute au vol : un outil d'observation ne doit pas se journaliser
-    // lui-meme. Sans ca, consulter le tableau de bord remplissait la table de ses
-    // propres visites (8 lignes sur 15 lors du premier essai) et le referent
-    // exposait la navigation admin.
-    private const IGNORED_PREFIXES = ['/_wdt', '/_profiler', '/_fragment', '/health', '/favicon.ico', ];
+    /**
+     * Pure noise, never recorded.
+     *
+     * The admin prefix is added on the fly: an observation tool must not log
+     * itself. Without that, opening the dashboard filled the table with its own
+     * visits — eight rows out of fifteen on the first try — and the referer
+     * exposed admin navigation.
+     */
+    private const IGNORED_PREFIXES = ['/_wdt', '/_profiler', '/_fragment', '/health', '/favicon.ico'];
 
     /**
-     * Charges utiles critiques : execution de code, injection SQL, traversee de
-     * repertoire, Log4Shell. Ce sont les seules qui atteignent encore PHP, les
-     * sondes /.env, /.git, /wp-* etant souvent arretees en amont par le serveur web.
-     * Declenchent un mail immediat.
+     * Critical payloads: code execution, SQL injection, directory traversal,
+     * Log4Shell. These are the ones that still reach PHP, since /.env, /.git
+     * and /wp-* probes are often stopped upstream by the web server. They
+     * trigger an immediate email.
      */
     private const CRITICAL_PATTERNS = [
         'rce_php_wrapper' => '#php://(input|filter)|auto_prepend_file|allow_url_include#i',
@@ -49,8 +53,8 @@ class SiteEventLogger
     ];
 
     /**
-     * Sondes plus banales : bruyantes mais sans danger immediat. Journalisees
-     * comme scan_probe, sans mail unitaire -- c'est la rafale qui alerte.
+     * More ordinary probes: noisy but not immediately dangerous. Recorded as
+     * scan_probe, with no individual email — it is the burst that alerts.
      */
     private const SUSPICIOUS_PATTERNS = [
         '#\.(env|sql|bak|old|orig|ya?ml|ini|pem|key|log)$#i',
@@ -60,38 +64,11 @@ class SiteEventLogger
         '#<script\b|javascript:|onerror\s*=#i',
     ];
 
-    /** Au-dela, une IP ne cree plus de ligne d'erreur pendant la fenetre. */
-    private const FLOOD_MAX_ERRORS_PER_IP = 5;
-    private const FLOOD_WINDOW_SECONDS = 3600;
-
-    /** Rafale de sondes : seuil de declenchement du mail. */
-    private const BURST_THRESHOLD = 15;
-    private const BURST_WINDOW_SECONDS = 600;
-
-    /** Echecs d'authentification repetes (401/403) avant alerte. */
-    private const BRUTEFORCE_THRESHOLD = 10;
-    private const BRUTEFORCE_WINDOW_SECONDS = 600;
-
-    /** Un mail par IP et par heure maximum, tous motifs confondus. */
-    private const ALERT_COOLDOWN_SECONDS = 3600;
-
     /**
-     * Chemins dont les refus ne declenchent jamais de blocage automatique.
-     *
-     * Un webhook entrant repond 401 des que la signature ne colle pas. C'est
-     * deja arrive pour une livraison parfaitement legitime, le temps qu'une cle
-     * de signature parvienne a l'environnement du conteneur. Avec le blocage
-     * automatique, cet incident de CONFIGURATION aurait banni le prestataire et
-     * coupe toute reception d'email -- une panne bien pire que celle qu'on
-     * cherche a eviter.
-     */
-    private const NEVER_AUTOBLOCK_PREFIXES = ['/api/webhook/'];
-
-    /**
-     * ⚠ SIX CONSTANTES DE CLASSE SONT DEVENUES DES ARGUMENTS. Elles étaient
-     * justes pour l'application d'origine ; un site à fort trafic voudra un
-     * quota anti-flood plus large, un site confidentiel des seuils plus bas.
-     * Les valeurs par défaut restent celles qui ont été éprouvées.
+     * Six former class constants are arguments now. The original values suited
+     * one application; a high-traffic site wants a wider anti-flood quota, a
+     * confidential one wants lower thresholds. The defaults below are the
+     * values that were actually run in production.
      */
     public function __construct(
         private Connection $connection,
@@ -99,10 +76,21 @@ class SiteEventLogger
         private LoggerInterface $logger,
         private SecurityAlert $notifier,
         private IpBlocklist $blocklist,
-        /** @var array{rafale:int,rafale_fenetre:int,bruteforce:int,bruteforce_fenetre:int,flood_max:int,flood_fenetre:int} */
+        /** @var array{burst:int,burst_window:int,bruteforce:int,bruteforce_window:int,flood_max:int,flood_window:int} */
         private array $thresholds = [],
         private int $alertCooldown = 3600,
-        /** @var string[] */
+        /**
+         * Paths whose refusals never trigger an automatic block.
+         *
+         * An inbound webhook answers 401 as soon as the signature does not
+         * match. That has already happened for a perfectly legitimate delivery,
+         * while a signing key was making its way to the container environment.
+         * With automatic blocking, that configuration incident would have
+         * banned the provider and cut off all incoming mail — an outage far
+         * worse than the one being prevented.
+         *
+         * @var string[]
+         */
         private array $exemptPaths = ['/api/webhook/'],
         /** @var array<string,string> */
         private array $extraPatterns = [],
@@ -114,27 +102,18 @@ class SiteEventLogger
             'burst' => 15, 'burst_window' => 600,
             'bruteforce' => 10, 'bruteforce_window' => 600,
             'flood_max' => 5, 'flood_window' => 3600,
-        ];}
+        ];
+    }
 
     /**
-     * Point d'entree principal : journalise une requete terminee.
-     */
-    /**
-     * Point d'entree principal : journalise une requete terminee.
+     * Entry point: records a finished request.
      *
-     * ⚠ TOUT LE CORPS EST PROTEGE, PAS SEULEMENT L'ECRITURE. Le `try/catch`
-     * n'entourait que l'insertion : une erreur dans la qualification ou dans les
-     * compteurs remontait librement — et comme on est sur `kernel.terminate`, la
-     * reponse est deja partie, l'exception ne va nulle part. Le site repond 200,
-     * la table reste vide, et rien ne le signale.
-     *
-     * C'est exactement ce qui s'est produit : un `use` reste sur l'ancien
-     * namespace apres extraction, une `ClassNotFoundError` a chaque requete, et
-     * pas une seule ligne journalisee pendant qu'on cherchait la cause du cote
-     * de la base.
-     *
-     * *Un journaliseur qui peut echouer en silence est pire qu'un journaliseur
-     * absent : on croit qu'il tourne.*
+     * The whole body is guarded, not just the write. Wrapping only the insert
+     * left errors in the classification or the counters free to propagate — and
+     * on `kernel.terminate` the response has already been sent, so the exception
+     * goes nowhere. The site answers 200, the table stays empty, and nothing
+     * says why. A logger that can fail silently is worse than no logger: you
+     * believe it is running.
      */
     public function logRequest(Request $request, Response $response): void
     {
@@ -142,8 +121,8 @@ class SiteEventLogger
             $this->record($request, $response);
         } catch (\Throwable $e) {
             $this->logger->error('Sentinelle: logging failed', [
-                'erreur'  => $e->getMessage(),
-                'file' => $e->getFile().':'.$e->getLine(),
+                'error' => $e->getMessage(),
+                'file'  => $e->getFile().':'.$e->getLine(),
             ]);
         }
     }
@@ -152,11 +131,10 @@ class SiteEventLogger
     {
         $path = $request->getPathInfo();
 
-        // ⚠ ON AJOUTE, ON NE REMPLACE PAS. Le prefixe d'administration est
-        // configurable : l'outil d'observation ne doit jamais se journaliser
-        // lui-meme, quel que soit l'endroit ou le projet l'a monte.
-        $ignores = array_merge(self::IGNORED_PREFIXES, $this->extraIgnored, [$this->adminPrefix]);
-        foreach ($ignores as $prefix) {
+        // Added to, never replaced. The admin prefix is configurable: the
+        // observation tool must never log itself, wherever it is mounted.
+        $ignored = array_merge(self::IGNORED_PREFIXES, $this->extraIgnored, [$this->adminPrefix]);
+        foreach ($ignored as $prefix) {
             if (str_starts_with($path, $prefix)) {
                 return;
             }
@@ -165,17 +143,19 @@ class SiteEventLogger
         $status = $response->getStatusCode();
         $ip = $request->getClientIp() ?? 'unknown';
         $query = $request->getQueryString() ?? '';
-        // Ce qu'on soumet aux motifs : chemin + query. Le corps POST n'est pas
-        // inspecte (couteux, et souvent des donnees personnelles a ne pas stocker).
+
+        // What the patterns are matched against: path plus query string. The
+        // POST body is not inspected — expensive, and often personal data that
+        // should not be stored.
         $haystack = rawurldecode($path . ($query !== '' ? '?' . $query : ''));
 
         $critical = $this->matchCritical($haystack);
         $suspicious = $critical === null && $this->isSuspicious($haystack);
 
-        // Une requete deja refusee par BlockedIpListener recoit son propre type.
-        // Sans ca elle tomberait en 'access_denied', gonflerait le compteur de
-        // bruteforce de l'IP et prolongerait son blocage a l'infini -- une IP
-        // bloquee ne pourrait alors plus jamais sortir de la liste.
+        // A request already turned away by BlockedIpListener gets its own type.
+        // Without this it would fall under 'access_denied', inflate the address's
+        // brute-force counter and extend its block indefinitely — a blocked
+        // address could then never leave the list.
         $alreadyBlocked = $request->attributes->getBoolean(BlockedIpListener::REQUEST_ATTRIBUTE);
 
         $type = match (true) {
@@ -196,13 +176,13 @@ class SiteEventLogger
             'referer' => $request->headers->get('Referer'),
         ]);
 
-        // Anti-flood : un scan de 155 requetes en 16 s ne doit pas produire
-        // 155 lignes. Les pages vues normales et les attaques critiques passent
-        // toujours -- ce sont elles qu'on veut completes.
+        // Anti-flood: a 155-request scan in 16 seconds must not produce 155
+        // rows. Ordinary page views and critical attacks always get through —
+        // those are the ones we want complete.
         //
-        // Le quota ne coupe QUE l'insertion : evaluateAlerts doit continuer a
-        // compter, sinon le seuil de rafale ne serait jamais atteint et le
-        // mecanisme d'alerte s'auto-neutraliserait au bout de 5 sondes.
+        // The quota stops the INSERT only: evaluateAlerts must keep counting,
+        // otherwise the burst threshold would never be reached and the alerting
+        // mechanism would neutralise itself after five probes.
         $flooding = $type !== 'page_view' && $critical === null && $this->isFlooding($ip, $type);
 
         if (!$flooding) {
@@ -213,7 +193,7 @@ class SiteEventLogger
     }
 
     /**
-     * Journalisation manuelle depuis le code metier (signature historique).
+     * Manual logging from application code.
      */
     public function log(string $type, ?string $url = null, ?string $ip = null, ?string $userAgent = null, array $meta = []): void
     {
@@ -233,18 +213,18 @@ class SiteEventLogger
                 'created_at'  => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
             ]);
         } catch (\Throwable $e) {
-            // Journaliser ne doit jamais casser une requete, ni fermer l'EntityManager.
+            // Logging must never break a request, nor close the EntityManager.
             $this->logger->warning('sentinelle_visit insert failed', ['error' => $e->getMessage()]);
         }
     }
 
     /**
-     * Masque les valeurs sensibles avant ecriture en base.
+     * Redacts sensitive values before writing to the database.
      *
-     * Le webhook inbound accepte son secret en parametre d'URL quand le
-     * prestataire ne sait pas envoyer d'en-tete. Sans ce masquage, chaque appel
-     * legitime ecrirait le secret en clair dans site_event, consultable depuis
-     * le dashboard admin.
+     * A webhook may accept its secret as a URL parameter when the provider
+     * cannot send headers. Without this masking, every legitimate call would
+     * write the secret in cleartext into a table readable from the admin
+     * dashboard.
      */
     private function redact(string $query): string
     {
@@ -257,7 +237,7 @@ class SiteEventLogger
 
     private function matchCritical(string $haystack): ?string
     {
-        // Les motifs du projet s'ajoutent : on n'en retire jamais.
+        // Project patterns are added; none are ever removed.
         foreach (array_merge(self::CRITICAL_PATTERNS, $this->extraPatterns) as $name => $pattern) {
             if (preg_match($pattern, $haystack) === 1) {
                 return $name;
@@ -279,11 +259,13 @@ class SiteEventLogger
     }
 
     /**
-     * Vrai si cette IP a deja depasse son quota de lignes d'erreur sur la fenetre.
+     * True when this address has already exceeded its error-row quota for the
+     * window.
      */
     private function isFlooding(string $ip, string $type): bool
     {
-        return $this->bump('flood_' . $ip . '_' . $type, $this->thresholds['flood_window']) > $this->thresholds['flood_max'];
+        return $this->bump('flood_' . $ip . '_' . $type, $this->thresholds['flood_window'])
+            > $this->thresholds['flood_max'];
     }
 
     private function evaluateAlerts(
@@ -295,7 +277,8 @@ class SiteEventLogger
         Request $request,
         array $meta,
     ): void {
-        // Deja bloquee : rien a reevaluer, et surtout aucun compteur a incrementer.
+        // Already blocked: nothing to reassess, and above all no counter to
+        // increment.
         if ($type === 'ip_blocked') {
             return;
         }
@@ -308,8 +291,8 @@ class SiteEventLogger
             $detail = 'Pattern matched: ' . $critical;
         } elseif ($type === 'access_denied') {
             $count = $this->bump('bf_' . $ip, $this->thresholds['bruteforce_window']);
-            // >= et non == : deux requetes concurrentes peuvent faire sauter la
-            // valeur exacte. Le cooldown par IP empeche deja la repetition du mail.
+            // >= rather than ==: two concurrent requests can skip the exact
+            // value. The per-IP cooldown already prevents a repeated email.
             if ($count >= $this->thresholds['bruteforce']) {
                 $reason = 'Likely brute force';
                 $detail = sprintf('%d access denials in under %d minutes', $count, $this->thresholds['bruteforce_window'] / 60);
@@ -326,10 +309,10 @@ class SiteEventLogger
             return;
         }
 
-        // Le blocage suit exactement les seuils qui declenchaient deja l'alerte
-        // mail : ce qui meritait qu'on previenne un humain merite qu'on ferme la
-        // porte. La difference, c'est que la porte se referme sans attendre
-        // qu'on lise ses mails.
+        // Blocking follows exactly the thresholds that already triggered the
+        // email: what deserved warning a human deserves closing the door. The
+        // difference is that the door now closes without waiting for anyone to
+        // read their mail.
         $blocked = $this->autoBlock($ip, $path, $reason, $detail);
 
         if (!$this->acquireAlertSlot($ip)) {
@@ -339,7 +322,7 @@ class SiteEventLogger
         if ($blocked !== null) {
             $detail .= sprintf(
                 ' — IP blocked automatically (%s)',
-                $blocked->isPermanent() ? 'permanently' : 'until ' . $blocked->getExpiresAt()->format('d/m/Y H:i')
+                $blocked->isPermanent() ? 'permanently' : 'until ' . $blocked->getExpiresAt()->format('Y-m-d H:i')
             );
         }
 
@@ -356,11 +339,11 @@ class SiteEventLogger
     }
 
     /**
-     * Inscrit l'IP sur la blocklist, sauf exemption de chemin.
+     * Adds the address to the blocklist, unless the path is exempt.
      */
     private function autoBlock(string $ip, string $path, string $reason, ?string $detail): ?BlockedIp
     {
-        foreach (self::NEVER_AUTOBLOCK_PREFIXES as $prefix) {
+        foreach ($this->exemptPaths as $prefix) {
             if (str_starts_with($path, $prefix)) {
                 $this->logger->info('Automatic block skipped: exempt path', ['ip' => $ip, 'path' => $path]);
 
@@ -372,8 +355,8 @@ class SiteEventLogger
     }
 
     /**
-     * Incremente un compteur a fenetre glissante et renvoie sa valeur.
-     * Approximatif par nature (pas d'atomicite) : suffisant pour un seuil.
+     * Increments a sliding-window counter and returns its value. Approximate by
+     * nature — there is no atomicity — which is good enough for a threshold.
      */
     private function bump(string $key, int $ttl): int
     {
@@ -390,7 +373,7 @@ class SiteEventLogger
     }
 
     /**
-     * Anti-spam de l'alerte : au plus un mail par IP et par heure.
+     * Alert throttling: at most one email per address per hour.
      */
     private function acquireAlertSlot(string $ip): bool
     {

@@ -8,15 +8,14 @@ use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
 /**
- * Ce qu'un projet peut régler, et ce qu'il ne peut pas.
+ * What a project may tune, and what it may not.
  *
- * ⚠ LES MOTIFS D'ATTAQUE SONT EXTENSIBLES, JAMAIS SUBSTITUABLES. Un projet peut
- * AJOUTER ses propres motifs et ses propres prestataires à protéger ; il ne peut
- * pas retirer ceux du bundle. Sinon on obtient une installation qui a désactivé
- * la détection Log4Shell sans que personne ne s'en aperçoive, en croyant
- * simplement « adapter la configuration à son projet ».
- *
- * *Ce qu'on rend configurable, on le rend désactivable par mégarde.*
+ * Detection patterns are extensible but never substitutable. A project can add
+ * its own patterns and its own protected providers; it cannot remove the
+ * bundle's. Otherwise you end up with an installation that has Log4Shell
+ * detection switched off and nobody realising it, having merely "adapted the
+ * configuration to the project". Whatever you make configurable, you make
+ * accidentally disableable.
  */
 class Configuration implements ConfigurationInterface
 {
@@ -26,87 +25,87 @@ class Configuration implements ConfigurationInterface
 
         $tree->getRootNode()
             ->children()
-                ->arrayNode('alert')
-                    ->isRequired()
-                    ->children()
-                        ->scalarNode('recipient')->isRequired()
-                            ->info('Where alerts are sent. Without a recipient, the bundle detects without warning anyone.')
-                        ->end()
-                        ->scalarNode('sender')->defaultValue('no-reply@localhost')->end()
-                        ->scalarNode('sender_name')->defaultValue('Sentinelle')->end()
-                        ->scalarNode('site_name')->defaultValue('le site')
-                            ->info('Apparaît dans le sujet : « Alerte sécurité <nom> ».')
-                        ->end()
-                        ->integerNode('cooldown')->defaultValue(3600)
-                            ->info("Secondes entre deux alertes pour une même IP. Un mail par attaque noie l'information dès le premier scan sérieux.")
-                        ->end()
-                    ->end()
-                ->end()
+            ->arrayNode('alert')
+            ->isRequired()
+            ->children()
+            ->scalarNode('recipient')->isRequired()
+            ->info('Where alerts are sent. Without a recipient, the bundle detects without warning anyone.')
+            ->end()
+            ->scalarNode('sender')->defaultValue('no-reply@localhost')->end()
+            ->scalarNode('sender_name')->defaultValue('Sentinelle')->end()
+            ->scalarNode('site_name')->defaultValue('the site')
+            ->info('Appears in the subject line: "Security alert <name>".')
+            ->end()
+            ->integerNode('cooldown')->defaultValue(3600)
+            ->info('Seconds between two alerts for the same IP. One email per attack drowns the information from the first serious scan onwards.')
+            ->end()
+            ->end()
+            ->end()
 
-                ->arrayNode('access')
-                    ->addDefaultsIfNotSet()
-                    ->children()
-                        ->scalarNode('role')->defaultValue('ROLE_ADMIN')->end()
-                        ->scalarNode('prefix')->defaultValue('/admin/activity')->end()
-                        ->scalarNode('parent_template')->defaultValue('base.html.twig')->end()
-                        ->scalarNode('back_route')->defaultNull()
-                            ->info('Route du bouton de retour. Null : pas de bouton.')
-                        ->end()
-                    ->end()
-                ->end()
+            ->arrayNode('access')
+            ->addDefaultsIfNotSet()
+            ->children()
+            ->scalarNode('role')->defaultValue('ROLE_ADMIN')->end()
+            ->scalarNode('prefix')->defaultValue('/admin/activity')->end()
+            ->scalarNode('parent_template')->defaultValue('base.html.twig')->end()
+            ->scalarNode('back_route')->defaultNull()
+            ->info('Route for the back link. Null means no button.')
+            ->end()
+            ->end()
+            ->end()
 
-                ->booleanNode('dry_run')
-                    ->defaultFalse()
-                    ->info("Mode d'essai : détecte, alerte et journalise, mais ne bloque JAMAIS. "
-                          ."À laisser actif les premières semaines sur un site en production — "
-                          ."on veut voir ce que le bundle AURAIT bloqué avant de lui donner la main.")
-                ->end()
+            ->booleanNode('dry_run')
+            ->defaultFalse()
+            ->info('Dry-run: detects, alerts and logs, but NEVER blocks. '
+                .'Leave it on for the first weeks on a live site — you want to see '
+                .'what the bundle would have shut out before handing it the keys.')
+            ->end()
 
-                ->arrayNode('thresholds')
-                    ->addDefaultsIfNotSet()
-                    ->children()
-                        ->integerNode('burst')->defaultValue(15)->end()
-                        ->integerNode('burst_window')->defaultValue(600)->end()
-                        ->integerNode('bruteforce')->defaultValue(10)->end()
-                        ->integerNode('bruteforce_window')->defaultValue(600)->end()
-                        ->integerNode('flood_max')->defaultValue(5)
-                            ->info("Lignes d'erreur par IP et par fenêtre. Au-delà on cesse d'écrire, mais on continue de COMPTER — sinon le seuil de rafale ne serait jamais atteint et l'alerte s'auto-neutraliserait.")
-                        ->end()
-                        ->integerNode('flood_window')->defaultValue(3600)->end()
-                    ->end()
-                ->end()
+            ->arrayNode('thresholds')
+            ->addDefaultsIfNotSet()
+            ->children()
+            ->integerNode('burst')->defaultValue(15)->end()
+            ->integerNode('burst_window')->defaultValue(600)->end()
+            ->integerNode('bruteforce')->defaultValue(10)->end()
+            ->integerNode('bruteforce_window')->defaultValue(600)->end()
+            ->integerNode('flood_max')->defaultValue(5)
+            ->info('Error rows per IP per window. Beyond that we stop writing but keep COUNTING — otherwise the burst threshold would never be reached and the alert would neutralise itself.')
+            ->end()
+            ->integerNode('flood_window')->defaultValue(3600)->end()
+            ->end()
+            ->end()
 
-                ->arrayNode('never_block')
-                    ->addDefaultsIfNotSet()
-                    ->children()
-                        ->scalarNode('ips')->defaultNull()
-                            ->info('IP ou CIDR séparés par des virgules. Y mettre au minimum ta propre IP de sortie.')
-                        ->end()
-                        ->arrayNode('paths')
-                            ->scalarPrototype()->end()
-                            ->defaultValue(['/api/webhook/'])
-                            ->info("Chemins dont les refus ne déclenchent jamais de blocage. Un webhook qui répond 401 le temps qu'une clé arrive ferait bannir le prestataire.")
-                        ->end()
-                        ->arrayNode('providers')
-                            ->scalarPrototype()->end()
-                            ->defaultValue([])
-                            ->info('Suffixes de reverse DNS AJOUTÉS à ceux du bundle. Le blocage y est refusé, même à la main.')
-                        ->end()
-                    ->end()
-                ->end()
+            ->arrayNode('never_block')
+            ->addDefaultsIfNotSet()
+            ->children()
+            ->scalarNode('ips')->defaultNull()
+            ->info('IPs or CIDRs, comma separated. Put at least your own outbound address here.')
+            ->end()
+            ->arrayNode('paths')
+            ->scalarPrototype()->end()
+            ->defaultValue(['/api/webhook/'])
+            ->info('Paths whose refusals never trigger a block. A webhook returning 401 while a key is being deployed would otherwise get the provider banned.')
+            ->end()
+            ->arrayNode('providers')
+            ->scalarPrototype()->end()
+            ->defaultValue([])
+            ->info("Reverse DNS suffixes ADDED to the bundle's own. Blocking is refused for these, even by hand.")
+            ->end()
+            ->end()
+            ->end()
 
-                ->arrayNode('critical_patterns')
-                    ->useAttributeAsKey('nom')
-                    ->scalarPrototype()->end()
-                    ->defaultValue([])
-                    ->info("Expressions régulières AJOUTÉES à celles du bundle. On n'en retire jamais.")
-                ->end()
+            ->arrayNode('critical_patterns')
+            ->useAttributeAsKey('name')
+            ->scalarPrototype()->end()
+            ->defaultValue([])
+            ->info("Regular expressions ADDED to the bundle's own. None are ever removed.")
+            ->end()
 
-                ->arrayNode('ignore')
-                    ->scalarPrototype()->end()
-                    ->defaultValue([])
-                    ->info('Préfixes jamais journalisés, en plus de ceux du bundle.')
-                ->end()
+            ->arrayNode('ignore')
+            ->scalarPrototype()->end()
+            ->defaultValue([])
+            ->info("Prefixes never logged, in addition to the bundle's own.")
+            ->end()
             ->end();
 
         return $tree;

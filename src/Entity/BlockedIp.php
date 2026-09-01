@@ -6,16 +6,16 @@ use Acencyril\SentinelleBundle\Repository\BlockedIpRepository;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * Une IP interdite d'acces au site.
+ * An address barred from the site.
  *
- * Avant cette table, bloquer une IP voulait dire ajouter une ligne dans la
- * configuration du serveur web puis la recharger. Fiable mais lent, et il
- * fallait y penser. La même décision vit ici : applicable sans redéploiement,
- * révocable d'un clic.
+ * Before this table, blocking an IP meant adding a line to the web server
+ * configuration and reloading it. Reliable but slow, and you had to remember to
+ * do it. The same decision lives here: applied without a deployment, revoked
+ * with one click.
  *
- * Le blocage reste volontairement temporaire par defaut : la quasi-totalite des
- * IP scannees sont des machines compromises ou des adresses cloud recyclees,
- * les bannir a vie finirait par fermer la porte a de vrais visiteurs.
+ * Blocks stay deliberately temporary by default. Almost every scanning address
+ * is a compromised machine or a recycled cloud address, and banning them for
+ * life would eventually shut the door on real visitors.
  */
 #[ORM\Entity(repositoryClass: BlockedIpRepository::class)]
 #[ORM\Table(name: 'sentinelle_blocked_ip')]
@@ -31,7 +31,7 @@ class BlockedIp
     #[ORM\Column(type: 'string', length: 45, unique: true)]
     private string $ip;
 
-    /** Motif lisible, affiche tel quel dans le dashboard. */
+    /** Readable reason, shown as-is on the dashboard. */
     #[ORM\Column(type: 'string', length: 255)]
     private string $reason;
 
@@ -39,20 +39,21 @@ class BlockedIp
     private string $source = self::SOURCE_AUTO;
 
     /**
-     * Nombre de blocages successifs de cette IP. Sert a allonger la peine :
-     * une IP qui revient apres expiration n'est pas un faux positif.
+     * How many times this address has been blocked. Used to lengthen the
+     * sentence: an address that comes back after expiry is not a false
+     * positive.
      */
     #[ORM\Column(type: 'smallint')]
     private int $strikes = 1;
 
-    /** Null = blocage permanent (3e récidive, ou blocage manuel sans durée). */
+    /** Null means permanent: third strike, or a manual block with no duration. */
     #[ORM\Column(type: 'datetime_immutable', nullable: true)]
     private ?\DateTimeImmutable $expiresAt = null;
 
     #[ORM\Column(type: 'datetime_immutable')]
     private \DateTimeImmutable $createdAt;
 
-    /** Derniere requete refusee : montre si l'IP insiste encore. */
+    /** Last refused request: shows whether the address is still insisting. */
     #[ORM\Column(type: 'datetime_immutable', nullable: true)]
     private ?\DateTimeImmutable $lastHitAt = null;
 

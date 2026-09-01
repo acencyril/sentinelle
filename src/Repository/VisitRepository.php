@@ -7,48 +7,51 @@ use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
- * @extends ServiceEntityRepository<BlockedIp>
+ * @extends ServiceEntityRepository<Visit>
  */
 class VisitRepository extends ServiceEntityRepository
 {
+    /** Types treated as anomalies, produced by SiteEventLogger. */
+    public const SUSPICIOUS_TYPES = ['attack_attempt', 'scan_probe', 'access_denied', 'server_error'];
+
     public function __construct(ManagerRegistry $registry)
     {
         parent::__construct($registry, Visit::class);
     }
 
-    public function save(Visit $siteEvent, bool $flush = false): void
+    public function save(Visit $visit, bool $flush = false): void
     {
-        $this->getEntityManager()->persist($siteEvent);
+        $this->getEntityManager()->persist($visit);
         if ($flush) {
             $this->getEntityManager()->flush();
         }
     }
 
-    public function remove(Visit $siteEvent, bool $flush = false): void
+    public function remove(Visit $visit, bool $flush = false): void
     {
-        $this->getEntityManager()->remove($siteEvent);
+        $this->getEntityManager()->remove($visit);
         if ($flush) {
             $this->getEntityManager()->flush();
         }
     }
 
-    /** Types consideres comme anormaux, produits par SiteEventLogger. */
-    public const SUSPICIOUS_TYPES = ['attack_attempt', 'scan_probe', 'access_denied', 'server_error'];
-
-    public function findLatest(string $filter = 'tout', int $limit = 200): array
+    /**
+     * @return Visit[]
+     */
+    public function findLatest(string $filter = 'all', int $limit = 200): array
     {
         $qb = $this->createQueryBuilder('e')
             ->orderBy('e.createdAt', 'DESC')
             ->setMaxResults($limit);
 
-        /* ⚠ « tout » ET « all » DÉSIGNAIENT LA MÊME CHOSE SANS SE CONNAÎTRE. Le
-           contrôleur et le gabarit ont été traduits en français, pas ce dépôt :
-           avec `filter=tout`, la requête cherchait les visites dont le TYPE vaut
-           littéralement « tout », et n'en trouvait aucune. Le résumé, qui ne
-           passe pas par ce filter, affichait pourtant treize lignes.
-           On accepte les deux, faute de pouvoir renommer sans casser les URL
-           déjà partagées. *Une traduction partielle est pire qu'aucune : elle
-           produit un désaccord silencieux entre deux moitiés du même code.* */
+        /* "tout" and "all" meant the same thing without knowing it. The
+           controller and the template had been translated, this repository had
+           not: with `filter=tout` the query looked for visits whose type was
+           literally "tout" and found none, while the summary — which does not
+           go through this filter — still showed thirteen rows. Both spellings
+           are accepted, since renaming would break URLs already shared. A
+           partial translation is worse than none: it produces a silent
+           disagreement between two halves of the same code. */
         if ('suspicious' === $filter || 'anomalies' === $filter) {
             $qb->andWhere('e.eventType IN (:types)')->setParameter('types', self::SUSPICIOUS_TYPES);
         } elseif ('all' !== $filter && 'tout' !== $filter) {
@@ -59,7 +62,7 @@ class VisitRepository extends ServiceEntityRepository
     }
 
     /**
-     * Compteur par type d'evenement sur une periode.
+     * Count per event type over a period.
      *
      * @return array<string,int>
      */
@@ -78,7 +81,7 @@ class VisitRepository extends ServiceEntityRepository
     }
 
     /**
-     * IP les plus actives sur les events anormaux.
+     * Addresses most active on anomalous events.
      *
      * @return array<int,array{ip:string,total:int,last:\DateTimeInterface}>
      */

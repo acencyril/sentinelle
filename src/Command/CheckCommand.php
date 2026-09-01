@@ -14,25 +14,24 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Verifie que Sentinelle peut faire son travail.
+ * Checks that Sentinelle can do its job.
  *
- * ⚠ CETTE COMMANDE EXISTE À CAUSE D'UNE SOIRÉE PERDUE. Le bundle s'installait,
- * se chargeait, listait ses dix services — et n'ecrivait pas une ligne. Il a
- * fallu remonter jusqu'aux journaux applicatifs pour decouvrir qu'une
- * `ClassNotFoundError` partait a chaque requete, avalee par un `try/catch` sur
- * `kernel.terminate` ou plus personne n'ecoute.
+ * This command exists because of an evening spent chasing nothing. The bundle
+ * installed, loaded, listed its ten services — and wrote not a single row. It
+ * took reading the application logs to find a `ClassNotFoundError` thrown on
+ * every request and swallowed by a `try/catch` on `kernel.terminate`, where
+ * nobody is listening any more.
  *
- * Chaque controle ci-dessous correspond a une facon dont le mecanisme peut
- * echouer EN SILENCE :
+ * Each check below matches a way the mechanism can fail silently:
  *
- *   · sans cache, `bump()` rend toujours 0 et aucun seuil ne se declenche —
- *     la detection est desarmee sans que rien ne le signale ;
- *   · sans table, l'insertion echoue et l'erreur part dans un avertissement ;
- *   · sans liste blanche, un blocage automatique peut vous fermer votre
- *     propre site ;
- *   · sans mailer joignable, les alertes ne partent pas et personne ne le sait.
+ *   - with no cache, `bump()` always returns 0, no threshold ever fires, and
+ *     detection is disarmed without anything saying so;
+ *   - with no table, the insert fails and the error goes to a warning;
+ *   - with an empty allowlist, an automatic block can lock you out of your own
+ *     site;
+ *   - with an unreachable mailer, alerts never leave and nobody knows.
  *
- * *Ce qui protege doit pouvoir dire s'il est en etat de le faire.*
+ * Whatever protects you should be able to say whether it is in a position to.
  */
 #[AsCommand(
     name: 'sentinelle:check',
@@ -57,7 +56,7 @@ class CheckCommand extends Command
         $io->title('Sentinelle');
         $problems = [];
 
-        // --- le cache. Sans lui, aucun seuil ne se declenche jamais.
+        // The cache. Without it no threshold ever fires.
         try {
             $item = $this->cache->getItem('sentinelle_probe_'.bin2hex(random_bytes(4)));
             $item->set(1)->expiresAfter(10);
@@ -69,7 +68,7 @@ class CheckCommand extends Command
                 .'('.$e->getMessage().')';
         }
 
-        // --- les deux tables
+        // The two tables.
         foreach (['sentinelle_visit', 'sentinelle_blocked_ip'] as $table) {
             try {
                 $this->connection->fetchOne("SELECT COUNT(*) FROM $table");
@@ -80,7 +79,7 @@ class CheckCommand extends Command
             }
         }
 
-        // --- la liste blanche. Celle qui evite de se fermer la porte.
+        // The allowlist — the one thing that keeps you from locking yourself out.
         $declared = array_filter(array_map('trim', explode(',', $this->allowlist ?? '')));
         if ([] === $declared) {
             $problems[] = 'Allowlist is empty. Private ranges are protected by default, '
@@ -91,7 +90,7 @@ class CheckCommand extends Command
             $io->text(sprintf('<info>ok</info>   %d address(es) allowlisted', \count($declared)));
         }
 
-        // --- le destinataire des alertes
+        // Where alerts are sent.
         if (false === filter_var($this->recipient, \FILTER_VALIDATE_EMAIL)) {
             $problems[] = sprintf('"%s" is not a valid address: alerts '
                 .'will not be sent.', $this->recipient);
@@ -99,25 +98,23 @@ class CheckCommand extends Command
             $io->text('<info>ok</info>   alerts will go to <comment>'.$this->recipient.'</comment>');
         }
 
-        // --- l'etat courant
-        /* ⚠ CE COMPTAGE N'ÉTAIT PAS PROTÉGÉ, alors qu'il interroge une table
-    dont on vient peut-être de constater l'absence. La commande s'arrêtait
-    donc net au milieu de son rapport : les trois contrôles suivants ne
-    s'exécutaient jamais, et l'on ignorait que la liste blanche était vide.
-
-    *Un outil de diagnostic qui plante sur ce qu'il diagnostique ne
-    diagnostique rien.* */
+        /* Current state. This count is guarded because it queries a table whose
+           absence may have just been reported: without the guard the command
+           stopped dead in the middle of its report, the remaining checks never
+           ran, and you never learned that the allowlist was empty. A diagnostic
+           tool that crashes on what it diagnoses diagnoses nothing. */
         try {
             $active = \count($this->blocklist->activeEntries());
         } catch (\Throwable) {
             $active = 0;
         }
+
         $io->newLine();
         if ($this->dryRun) {
-            $io->warning("Dry-run active: Sentinelle detects, logs and alerts, "
-                ."but blocks NOTHING. Simulated blocks appear in the application "
-                ."logs. Set sentinelle.dry_run to false once you have seen what it "
-                ."would have shut out.");
+            $io->warning('Dry-run active: Sentinelle detects, logs and alerts, '
+                .'but blocks NOTHING. Simulated blocks appear in the application '
+                .'logs. Set sentinelle.dry_run to false once you have seen what it '
+                .'would have shut out.');
         } else {
             $io->text(sprintf('Blocking <info>active</info> — %d address(es) currently blocked.', $active));
         }

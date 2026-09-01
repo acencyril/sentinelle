@@ -7,12 +7,21 @@ namespace Acencyril\SentinelleBundle;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 
 /**
- * Sentinelle — journalise les visites, reconnaît les attaques, ferme la porte.
+ * Sentinelle — logs traffic, recognises attacks, closes the door.
  *
- * Extrait d'une application en production. Rien n'est réinventé : les motifs de
- * détection, les seuils et la progressivité des peines viennent d'incidents
- * réels, et les commentaires qui les expliquent sont conservés tels quels — ils
- * valent plus que le code.
+ * Extracted from an application running in production. Nothing here is
+ * reinvented: the detection patterns, the thresholds and the escalating
+ * penalties all come from real incidents, and the comments explaining them are
+ * kept as they were.
+ *
+ * Extracting it meant removing seven assumptions the original made about its
+ * host: the admin address, the sender, the domain in links, the site name in
+ * subjects, the access role, the parent template and the back-link route. All
+ * of them are configuration now.
+ *
+ * Note `Bundle` rather than `AbstractBundle`: the latter carries its own
+ * configuration and ignores an extension class written alongside it, which
+ * leaves the bundle loading fine with an empty configuration tree.
  */
 class SentinelleBundle extends Bundle
 {

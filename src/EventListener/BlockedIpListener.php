@@ -7,18 +7,18 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 
 /**
- * Refuse les requetes venant d'une IP bloquee.
+ * Turns away requests coming from a blocked IP.
  *
- * Branche tres tot sur kernel.request, avant le routeur (priorite 32) et le
- * pare-feu (priorite 8) : une IP bannie ne doit consommer ni resolution de
- * route, ni session, ni requete en base.
+ * Hooked very early on kernel.request, ahead of the router (priority 32) and
+ * the firewall (priority 8): a banned address must consume no route
+ * resolution, no session and no database query.
  *
- * La reponse est un 403 nu, sans page d'erreur ni indice sur la raison du refus.
- * Repondre en detail a un scanner lui apprend seulement ce qu'il a declenche.
+ * The response is a bare 403, with no error page and no hint as to why. Telling
+ * a scanner what happened only teaches it what it triggered.
  */
 class BlockedIpListener
 {
-    /** Marqueur relu par SiteEventLogger pour etiqueter la ligne "ip_blocked". */
+    /** Flag read back by SiteEventLogger to label the row "ip_blocked". */
     public const REQUEST_ATTRIBUTE = '_ip_blocked';
 
     public function __construct(private IpBlocklist $blocklist) {}
@@ -39,8 +39,8 @@ class BlockedIpListener
 
         $event->setResponse(new Response('Forbidden', Response::HTTP_FORBIDDEN, [
             'Content-Type' => 'text/plain; charset=UTF-8',
-            // Ne pas laisser un cache intermediaire memoriser ce 403 : le blocage
-            // expire, la reponse ne doit pas lui survivre.
+            // No intermediate cache should remember this 403: the block
+            // expires, and the response must not outlive it.
             'Cache-Control' => 'no-store, private',
         ]));
     }

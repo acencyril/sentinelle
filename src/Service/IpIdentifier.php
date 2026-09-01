@@ -5,84 +5,82 @@ namespace Acencyril\SentinelleBundle\Service;
 use Psr\Cache\CacheItemPoolInterface;
 
 /**
- * Met un nom sur une adresse IP.
+ * Puts a name on an IP address.
  *
- * Le tableau de bord n'affichait que des IP nues. Impossible de decider quoi
- * que ce soit devant une suite de chiffres : celle qui vous semble suspecte est
- * peut-etre le serveur qui vous livre vos emails, et la bloquer coupe toute
- * reception. Sans cette colonne, la seule strategie raisonnable est de tout
- * bloquer au hasard -- ou rien.
+ * The dashboard used to show bare addresses. You cannot decide anything looking
+ * at a string of digits: the one that seems suspicious may be the server
+ * delivering your email, and blocking it cuts off all incoming mail. Without
+ * this column the only sensible strategy is to block everything at random — or
+ * nothing.
  *
- * L'identification repose sur le reverse DNS, qui est declaratif et peut mentir
- * pour un attaquant. C'est sans importance ici : on s'en sert pour reconnaitre
- * les prestataires legitimes qu'on ne veut surtout pas bloquer, pas pour
- * accorder un droit. Une IP hostile qui se ferait passer pour Mailgun gagnerait
- * seulement de ne pas etre bloquee automatiquement, et son reverse DNS devrait
- * pour cela etre reellement delegue par le proprietaire de la plage.
+ * Identification relies on reverse DNS, which is declarative and can lie. That
+ * does not matter here: it is used to recognise legitimate providers you must
+ * not block, not to grant a right. A hostile address posing as Mailgun would
+ * only gain not being blocked automatically, and its reverse DNS would have to
+ * be genuinely delegated by the owner of the range for that.
  */
 class IpIdentifier
 {
     /**
-     * Reconnaissance par suffixe de reverse DNS.
+     * Recognition by reverse DNS suffix.
      *
-     * 'critical' marque les prestataires dont le blocage casse une fonction du
-     * site : ils sont refuses par IpBlocklist et signales en rouge.
+     * 'critical' marks providers whose blocking breaks a working part of the
+     * site: those are refused by IpBlocklist and flagged in red.
      *
-     * ⚠ CETTE LISTE EST UN POINT DE DÉPART, PAS UN INVENTAIRE. Elle ne contient
-     * que des prestataires très répandus. Les tiens — signature électronique,
-     * facturation, hébergeur de médias — se déclarent dans
-     * `sentinelle.never_block.providers` : ils s'AJOUTENT à ceux-ci.
+     * A starting point, not an inventory: only the most widespread providers
+     * are listed here. Yours — e-signature, invoicing, media hosting — go in
+     * `sentinelle.never_block.providers` and are added to these.
      *
-     * Ne pas les y mettre revient à parier que le blocage automatique ne les
-     * atteindra jamais. C'est exactement ce pari qui a été perdu une fois.
+     * Leaving them out is a bet that automatic blocking will never reach them.
+     * That bet has been lost before.
      *
      * @var array<string,array{label:string,critical:bool}>
      */
     private const KNOWN_SUFFIXES = [
-        '.mgsend.net'          => ['label' => 'Mailgun (emails entrants)', 'critical' => true],
-        '.mailgun.org'         => ['label' => 'Mailgun (emails entrants)', 'critical' => true],
-        '.sendgrid.net'        => ['label' => 'SendGrid (emails)',         'critical' => true],
-        '.sendinblue.com'      => ['label' => 'Brevo (emails)',            'critical' => true],
-        '.postmarkapp.com'     => ['label' => 'Postmark (emails)',         'critical' => true],
-        '.stripe.com'          => ['label' => 'Stripe (paiements)',        'critical' => true],
-        '.googlebot.com'       => ['label' => 'Googlebot',                 'critical' => false],
-        '.google.com'          => ['label' => 'Google',                    'critical' => false],
-        '.search.msn.com'      => ['label' => 'Bingbot',                   'critical' => false],
-        '.crawl.yahoo.net'     => ['label' => 'Yahoo Slurp',               'critical' => false],
-        '.applebot.apple.com'  => ['label' => 'Applebot',                  'critical' => false],
-        '.bc.googleusercontent.com' => ['label' => 'Google Cloud',         'critical' => false],
-        '.amazonaws.com'       => ['label' => 'AWS',                       'critical' => false],
-        '.cloudfront.net'      => ['label' => 'AWS CloudFront',            'critical' => false],
-        '.azure.com'           => ['label' => 'Microsoft Azure',           'critical' => false],
-        '.ovh.net'             => ['label' => 'OVH',                       'critical' => false],
-        '.scaleway.com'        => ['label' => 'Scaleway',                  'critical' => false],
-        '.hetzner.com'         => ['label' => 'Hetzner',                   'critical' => false],
-        '.digitalocean.com'    => ['label' => 'DigitalOcean',              'critical' => false],
-        '.orangecustomers.net' => ['label' => 'Orange (FAI grand public)', 'critical' => false],
-        '.proxad.net'          => ['label' => 'Free (FAI grand public)',   'critical' => false],
-        '.bbox.fr'             => ['label' => 'Bouygues (FAI)',            'critical' => false],
-        '.sfr.net'             => ['label' => 'SFR (FAI)',                 'critical' => false],
-        '.numericable.fr'      => ['label' => 'SFR (FAI)',                 'critical' => false],
+        '.mgsend.net'          => ['label' => 'Mailgun (inbound email)',  'critical' => true],
+        '.mailgun.org'         => ['label' => 'Mailgun (inbound email)',  'critical' => true],
+        '.sendgrid.net'        => ['label' => 'SendGrid (email)',         'critical' => true],
+        '.sendinblue.com'      => ['label' => 'Brevo (email)',            'critical' => true],
+        '.postmarkapp.com'     => ['label' => 'Postmark (email)',         'critical' => true],
+        '.stripe.com'          => ['label' => 'Stripe (payments)',        'critical' => true],
+        '.googlebot.com'       => ['label' => 'Googlebot',                'critical' => false],
+        '.google.com'          => ['label' => 'Google',                   'critical' => false],
+        '.search.msn.com'      => ['label' => 'Bingbot',                  'critical' => false],
+        '.crawl.yahoo.net'     => ['label' => 'Yahoo Slurp',              'critical' => false],
+        '.applebot.apple.com'  => ['label' => 'Applebot',                 'critical' => false],
+        '.bc.googleusercontent.com' => ['label' => 'Google Cloud',        'critical' => false],
+        '.amazonaws.com'       => ['label' => 'AWS',                      'critical' => false],
+        '.cloudfront.net'      => ['label' => 'AWS CloudFront',           'critical' => false],
+        '.azure.com'           => ['label' => 'Microsoft Azure',          'critical' => false],
+        '.ovh.net'             => ['label' => 'OVH',                      'critical' => false],
+        '.scaleway.com'        => ['label' => 'Scaleway',                 'critical' => false],
+        '.hetzner.com'         => ['label' => 'Hetzner',                  'critical' => false],
+        '.digitalocean.com'    => ['label' => 'DigitalOcean',             'critical' => false],
+        '.orangecustomers.net' => ['label' => 'Orange (consumer ISP)',    'critical' => false],
+        '.proxad.net'          => ['label' => 'Free (consumer ISP)',      'critical' => false],
+        '.bbox.fr'             => ['label' => 'Bouygues (ISP)',           'critical' => false],
+        '.sfr.net'             => ['label' => 'SFR (ISP)',                'critical' => false],
+        '.numericable.fr'      => ['label' => 'SFR (ISP)',                'critical' => false],
     ];
 
-    /** Le reverse DNS d'une IP ne change quasiment jamais. */
+    /** The reverse DNS of an address almost never changes. */
     private const CACHE_TTL = 604800;
 
     /**
-     * Plafond de resolutions reellement effectuees par affichage de page.
+     * Cap on lookups actually performed per page render.
      *
-     * Une resolution inverse froide prend jusqu'a quelques secondes ; sans
-     * plafond, un tableau de 200 lignes portant autant d'IP inconnues rendrait
-     * le dashboard inutilisable. Les IP au-dela restent affichees, simplement
-     * sans nom -- elles seront resolues au prochain passage.
+     * A cold reverse lookup can take seconds; without a cap, a table of 200
+     * rows carrying that many unknown addresses would make the dashboard
+     * unusable. Addresses beyond the cap are still shown, simply without a
+     * name — they get resolved on the next visit.
      */
     private const MAX_LOOKUPS_PER_BATCH = 30;
 
     /**
-     * @param array<string,string> $extra suffixe => libelle, tous critiques.
-     *                                     Fusionnes avec KNOWN_SUFFIXES, jamais
-     *                                     substitues : on n'enleve pas une
-     *                                     protection par configuration.
+     * @param array<string,string> $extra suffix => label, all critical. Merged
+     *                                    with KNOWN_SUFFIXES, never
+     *                                    substituted: protection is not removed
+     *                                    by configuration.
      */
     public function __construct(
         private CacheItemPoolInterface $cache,
@@ -94,22 +92,22 @@ class IpIdentifier
      */
     private function knownSuffixes(): array
     {
-        $tous = self::KNOWN_SUFFIXES;
-        foreach ($this->extra as $suffixe => $libelle) {
-            // ⚠ LES AJOUTS DU PROJET SONT TOUJOURS CRITIQUES. Declarer un
-            // prestataire, c'est dire « ne le bloque jamais » ; il n'y aurait
-            // aucune raison de l'inscrire pour autre chose.
-            $tous[$suffixe] = ['label' => $libelle, 'critical' => true];
+        $all = self::KNOWN_SUFFIXES;
+        foreach ($this->extra as $suffix => $label) {
+            // Entries declared by the project are always critical: listing a
+            // provider means "never block this", and there is no other reason
+            // to list one.
+            $all[$suffix] = ['label' => $label, 'critical' => true];
         }
 
-        return $tous;
+        return $all;
     }
 
     /**
-     * Identifie un lot d'IP d'un coup.
+     * Identifies a batch of addresses in one pass.
      *
      * @param  iterable<string> $ips
-     * @return array<string,array{hostname:?string,label:?string,critical:bool}> indexe par IP
+     * @return array<string,array{hostname:?string,label:?string,critical:bool}> keyed by IP
      */
     public function identifyMany(iterable $ips): array
     {
@@ -169,7 +167,7 @@ class IpIdentifier
     {
         $hostname = @gethostbyaddr($ip);
 
-        // gethostbyaddr renvoie l'IP telle quelle quand la resolution echoue.
+        // gethostbyaddr returns the address itself when resolution fails.
         if ($hostname === false || $hostname === $ip) {
             $hostname = null;
         } else {
@@ -193,7 +191,7 @@ class IpIdentifier
             $item->set($identity)->expiresAfter(self::CACHE_TTL);
             $this->cache->save($item);
         } catch (\Throwable) {
-            // Sans cache on refera la resolution : plus lent, pas faux.
+            // Without a cache the lookup happens again: slower, not wrong.
         }
 
         return $identity;

@@ -22,7 +22,7 @@ class BlockedIpRepository extends ServiceEntityRepository
     }
 
     /**
-     * Blocages encore actifs, les plus recents d'abord.
+     * Blocks still in force, most recent first.
      *
      * @return BlockedIp[]
      */
@@ -37,9 +37,10 @@ class BlockedIpRepository extends ServiceEntityRepository
     }
 
     /**
-     * Les seules IP que le listener doit refuser, sous forme de simple tableau.
-     * Volontairement minimal : ce resultat est mis en cache et relu a chaque
-     * requete, inutile d'hydrater des entites completes pour un in_array.
+     * The addresses the listener must turn away, as a plain array.
+     *
+     * Deliberately minimal: this result is cached and read back on every
+     * request, so there is no point hydrating full entities for an in_array.
      *
      * @return string[]
      */
@@ -56,9 +57,11 @@ class BlockedIpRepository extends ServiceEntityRepository
     }
 
     /**
-     * Supprime les blocages expires. Sans ca la table grossit indefiniment et
-     * l'historique des strikes devient faux : une IP bloquee il y a six mois
-     * repasserait en recidive au premier scan.
+     * Removes expired blocks.
+     *
+     * Without this the table grows forever and the strike history becomes
+     * wrong: an address blocked six months ago would come back as a repeat
+     * offender on its first scan.
      */
     public function purgeExpired(\DateTimeImmutable $before): int
     {

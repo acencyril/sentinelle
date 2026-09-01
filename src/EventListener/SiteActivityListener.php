@@ -6,12 +6,12 @@ use Acencyril\SentinelleBundle\Service\SiteEventLogger;
 use Symfony\Component\HttpKernel\Event\TerminateEvent;
 
 /**
- * Journalise chaque requete apres envoi de la reponse.
+ * Records every request once the response has been sent.
  *
- * Branche sur kernel.terminate et non kernel.request : c'est le seul moment ou
- * le code HTTP est connu, et l'insertion en base n'ajoute alors aucune latence
- * pour le visiteur. kernel.terminate ne se declenche que sur la requete
- * principale, ce qui elimine au passage les doublons de sous-requetes.
+ * Hooked on kernel.terminate rather than kernel.request: that is the only
+ * moment the status code is known, and writing to the database then costs the
+ * visitor nothing. kernel.terminate only fires on the main request, which also
+ * removes duplicates from sub-requests.
  */
 class SiteActivityListener
 {

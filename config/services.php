@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-use Acencyril\SentinelleBundle\Controller\ActivityController;
-use Acencyril\SentinelleBundle\Command\PurgeCommand;
 use Acencyril\SentinelleBundle\Command\CheckCommand;
+use Acencyril\SentinelleBundle\Command\PurgeCommand;
+use Acencyril\SentinelleBundle\Controller\ActivityController;
 use Acencyril\SentinelleBundle\EventListener\BlockedIpListener;
 use Acencyril\SentinelleBundle\EventListener\SiteActivityListener;
 use Acencyril\SentinelleBundle\Repository\BlockedIpRepository;
 use Acencyril\SentinelleBundle\Repository\VisitRepository;
-use Acencyril\SentinelleBundle\Service\SecurityAlert;
 use Acencyril\SentinelleBundle\Service\IpBlocklist;
 use Acencyril\SentinelleBundle\Service\IpIdentifier;
+use Acencyril\SentinelleBundle\Service\SecurityAlert;
 use Acencyril\SentinelleBundle\Service\SiteEventLogger;
 
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
@@ -67,24 +67,27 @@ return static function (Symfony\Component\DependencyInjection\Loader\Configurato
             '%sentinelle.access.prefix%',
         ]);
 
-    /* ⚠ PRIORITÉ 300, AVANT LE ROUTEUR (32) ET LE PARE-FEU (8). Une adresse
-       bannie ne doit consommer ni résolution de route, ni session, ni requête en
-       base. Placé après, le blocage coûterait presque aussi cher qu'un accès. */
+    /* Priority 300, ahead of the router (32) and the firewall (8). A banned
+       address must consume no route resolution, no session and no database
+       query. Placed later, blocking would cost almost as much as serving. */
     $services->set(BlockedIpListener::class)
         ->args([service(IpBlocklist::class)])
         ->tag('kernel.event_listener', [
             'event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 300,
         ]);
 
-    /* Sur `kernel.terminate` : la réponse est partie, l'écriture ne coûte rien au
-       visiteur — et c'est le seul moment où le code HTTP est connu. */
+    /* On kernel.terminate: the response has gone out, so writing costs the
+       visitor nothing — and it is the only moment the status code is known. */
     $services->set(SiteActivityListener::class)
         ->args([service(SiteEventLogger::class)])
         ->tag('kernel.event_listener', [
             'event' => 'kernel.terminate', 'method' => 'onKernelTerminate',
         ]);
 
-        $services->set(ActivityController::class)
+    /* Dependencies are injected explicitly rather than through the restricted
+       container an AbstractController expects: autoconfiguration is off here,
+       and that container would never be built. */
+    $services->set(ActivityController::class)
         ->args([
             service(VisitRepository::class),
             service(IpBlocklist::class),

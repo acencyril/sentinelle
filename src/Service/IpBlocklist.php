@@ -9,36 +9,37 @@ use Psr\Cache\CacheItemPoolInterface;
 use Psr\Log\LoggerInterface;
 
 /**
- * Liste des IP interdites d'acces, et decision de les y inscrire.
+ * The list of barred addresses, and the decision to add one to it.
  *
- * Lue sur chaque requete par BlockedIpListener, ecrite par SiteEventLogger
- * quand une IP franchit un seuil. La lecture passe par le cache : un aller en
- * base par requete pour une liste qui contient une poignee d'adresses serait
- * disproportionne.
+ * Read on every request by BlockedIpListener, written by SiteEventLogger when
+ * an address crosses a threshold. Reads go through the cache: a database round
+ * trip per request, for a list holding a handful of addresses, would be out of
+ * proportion.
  */
 class IpBlocklist
 {
     /**
-     * Duree du blocage selon le nombre de recidives. Au 3e passage, permanent.
+     * Block duration by strike count. Permanent on the third.
      *
-     * Progressif et non definitif d'emblee : la plupart des IP de scan sont des
-     * machines compromises ou des adresses cloud reattribuees en permanence.
-     * Une IP qui revient apres 24 h puis apres 7 jours, elle, est deliberee.
+     * Progressive rather than permanent from the start: most scanning addresses
+     * are compromised machines or cloud addresses being constantly reassigned.
+     * An address that comes back after 24 hours, then after 7 days, is
+     * deliberate.
      */
     private const TTL_BY_STRIKE = [1 => '+24 hours', 2 => '+7 days'];
 
-    /** Cle de cache portant la liste complete ; invalidee a chaque ecriture. */
+    /** Cache key holding the whole list; invalidated on every write. */
     private const CACHE_KEY = 'ip_blocklist_active';
     private const CACHE_TTL = 300;
 
     /**
-     * Jamais blocked, quoi qu'elles fassent.
+     * Never blocked, whatever they do.
      *
-     * Les plages privees couvrent le reseau Docker : sans reverse-proxy
-     * correctement configure, toutes les requetes semblent venir de la passerelle
-     * du conteneur, et un seul scanner ferait bannir le site entier.
+     * The private ranges cover the Docker network: without a correctly
+     * configured reverse proxy, every request appears to come from the
+     * container gateway, and a single scanner would get the whole site banned.
      *
-     * @var string[] notation CIDR
+     * @var string[] CIDR notation
      */
     private const ALWAYS_ALLOWED = [
         '127.0.0.0/8',
@@ -48,7 +49,7 @@ class IpBlocklist
         '::1/128',
     ];
 
-    /** @var string[]|null Allowlist configuree, decomposee au premier acces. */
+    /** @var string[]|null Configured allowlist, split on first access. */
     private ?array $configuredAllowlist = null;
 
     public function __construct(
@@ -57,29 +58,26 @@ class IpBlocklist
         private CacheItemPoolInterface $cache,
         private LoggerInterface $logger,
         private IpIdentifier $identifier,
-        // Nullable : '%env(default::IP_BLOCK_ALLOWLIST)%' vaut null quand la
-        // variable n'est pas definie, pas la chaine vide.
+        // Nullable: '%env(default::SENTINELLE_ALLOWLIST)%' is null when the
+        // variable is undefined, not the empty string.
         private ?string $allowlist = null,
         /**
-         * ⚠ MODE D'ESSAI : ON DÉTECTE, ON ALERTE, ON NE BLOQUE PAS.
+         * Dry-run: detect and alert, but never block.
          *
-         * Personne de sensé ne branche un blocage automatique sur un site en
-         * production sans savoir ce qu'il va fermer. Les premières semaines, on
-         * veut lire le journal et se demander « aurais-je voulu bloquer
-         * celle-ci ? » — pas découvrir a posteriori qu'un client a été banni.
+         * Nobody wires automatic blocking into a live site without first seeing
+         * what it would shut out. For the first weeks you want to read the log
+         * and ask "would I have wanted to block this one?" — not find out
+         * afterwards that a customer was banned.
          *
-         * Le refus est journalisé avec ce qui AURAIT été décidé, durée
-         * comprise : c'est exactement ce qu'il faut pour juger avant de
-         * basculer.
-         *
-         * *Un mécanisme qu'on ne peut pas essayer sans risque ne sera pas
-         * essayé — il sera installé et desactivé au premier incident.*
+         * Refusals are logged with the decision that would have been taken,
+         * duration included, which is what you need in order to judge before
+         * switching it off.
          */
         private bool $dryRun = false,
     ) {}
 
     /**
-     * Cette IP doit-elle etre refusee maintenant ?
+     * Should this address be turned away right now?
      */
     public function isBlocked(string $ip): bool
     {
@@ -91,7 +89,7 @@ class IpBlocklist
     }
 
     /**
-     * Une IP protegee ne peut etre ni bloquee automatiquement, ni manuellement.
+     * A protected address can be blocked neither automatically nor by hand.
      */
     public function isAllowed(string $ip): bool
     {
@@ -111,11 +109,11 @@ class IpBlocklist
     }
 
     /**
-     * Inscrit ou prolonge un blocage. Renvoie l'entree, ou null si l'IP est
-     * protegee par l'allowlist.
+     * Adds or extends a block. Returns the entry, or null when the address is
+     * protected by the allowlist.
      *
-     * Idempotent : rappeler avec la meme IP pendant que le blocage court ne
-     * cree pas de recidive, seul un nouveau blocage apres expiration compte.
+     * Idempotent: calling again for the same address while the block is running
+     * does not add a strike; only a fresh block after expiry counts.
      */
     public function block(string $ip, string $reason, string $source = BlockedIp::SOURCE_AUTO, ?string $ttl = null): ?BlockedIp
     {
@@ -164,13 +162,13 @@ class IpBlocklist
                 'reason'     => $reason,
                 'source'     => $source,
                 'strikes'    => $strikes,
-                'expires_at' => $entry->getExpiresAt()?->format('c') ?? 'jamais',
+                'expires_at' => $entry->getExpiresAt()?->format('c') ?? 'never',
             ]);
 
             return $entry;
         } catch (\Throwable $e) {
-            // Le blocage est une protection, pas une fonction vitale : s'il
-            // echoue, la requete en cours doit continuer normalement.
+            // Blocking is a protection, not a vital function: if it fails, the
+            // request in flight must carry on as normal.
             $this->logger->error('Failed to block IP', ['ip' => $ip, 'error' => $e->getMessage()]);
 
             return null;
@@ -194,8 +192,8 @@ class IpBlocklist
     }
 
     /**
-     * Comptabilise une requete refusee, pour montrer dans le dashboard si l'IP
-     * insiste encore apres son blocage.
+     * Counts a refused request, so the dashboard shows whether the address is
+     * still insisting after being blocked.
      */
     public function registerHit(string $ip): void
     {
@@ -243,8 +241,8 @@ class IpBlocklist
 
             return $ips;
         } catch (\Throwable $e) {
-            // Cache ou base indisponible : on laisse passer. Un blocage rate est
-            // moins grave qu'un site qui refuse tout le monde.
+            // Cache or database unavailable: let the traffic through. A missed
+            // block is less serious than a site turning everybody away.
             $this->logger->warning('Could not read the blocklist', ['error' => $e->getMessage()]);
 
             return [];
@@ -256,12 +254,12 @@ class IpBlocklist
         try {
             $this->cache->deleteItem(self::CACHE_KEY);
         } catch (\Throwable) {
-            // Sans importance : l'entree expire d'elle-meme en 5 minutes.
+            // Harmless: the entry expires on its own within five minutes.
         }
     }
 
     /**
-     * Null = permanent.
+     * Null means permanent.
      */
     private function expiryFor(int $strikes, string $source, ?string $ttl): ?\DateTimeImmutable
     {
@@ -269,7 +267,8 @@ class IpBlocklist
             return $ttl === 'permanent' ? null : new \DateTimeImmutable($ttl);
         }
 
-        // Un blocage manuel sans duree explicite est un choix delibere : permanent.
+        // A manual block with no explicit duration is a deliberate choice:
+        // permanent.
         if ($source === BlockedIp::SOURCE_MANUAL) {
             return null;
         }
@@ -280,17 +279,17 @@ class IpBlocklist
     }
 
     /**
-     * L'IP appartient-elle a un prestataire dont le blocage casserait une
-     * fonction du site (livraison d'emails, paiements, signatures) ?
+     * Does this address belong to a provider whose blocking would break a
+     * working part of the site — email delivery, payments, signatures?
      *
-     * Une IP de Mailgun a un jour ete bloquee A LA MAIN depuis le tableau de bord :
-     * elle y figurait comme suspecte apres un 401. Toute reception d'email
-     * serait morte en silence, et personne ne l'aurait su avant des heures.
-     * L'exemption de chemin ne couvrait que le blocage AUTOMATIQUE.
+     * A Mailgun address was once blocked BY HAND from the dashboard: it appeared
+     * there as suspicious after a 401. All inbound mail would have died
+     * silently, and nobody would have known for hours. The path exemption only
+     * covered AUTOMATIC blocking.
      *
-     * Volontairement appele depuis block() seulement, et pas depuis isBlocked() :
-     * une resolution inverse par requete entrante serait ruineuse. Le cout est
-     * paye une fois, au moment de la decision.
+     * Deliberately called from block() only, never from isBlocked(): a reverse
+     * lookup per incoming request would be ruinous. The cost is paid once, at
+     * the moment of the decision.
      */
     private function isProtectedProvider(string $ip): bool
     {
@@ -312,7 +311,7 @@ class IpBlocklist
     }
 
     /**
-     * Test d'appartenance a un CIDR, IPv4 et IPv6.
+     * CIDR membership test, IPv4 and IPv6.
      */
     private static function matchesCidr(string $ip, string $cidr): bool
     {

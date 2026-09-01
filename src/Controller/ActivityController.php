@@ -20,25 +20,20 @@ use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
 
 /**
- * Le tableau de bord : ce qui s'est passe, et ce qu'on decide d'en faire.
+ * The dashboard: what happened, and what you decide to do about it.
  *
- * ⚠ N'HERITE PAS DE `AbstractController`, ET C'EST DELIBERE. Cette classe de
- * base attend un conteneur RESTREINT que Symfony construit par
- * autoconfiguration — mecanisme desactive dans un bundle ou l'on declare tout
- * a la main. Les symptomes sont deroutants et se contredisent :
+ * This deliberately does not extend `AbstractController`. That base class
+ * expects a restricted container built by autoconfiguration — a mechanism
+ * disabled in a bundle where every service is declared by hand. The symptoms
+ * contradict each other: with no container you get "has no container set",
+ * with the global one you get "SecurityBundle is not registered". Two very
+ * different messages for a single cause, neither of which points at it.
+ * Injecting what is actually needed — the authorization checker, Twig, the
+ * router — removes the question instead of answering it.
  *
- *   · sans conteneur       : « has no container set »
- *   · avec le conteneur global : « SecurityBundle is not registered »
- *
- * Deux messages tres differents pour une seule cause, et aucun ne designe le
- * vrai probleme. Injecter directement ce dont on a besoin — le verificateur de
- * droits, Twig, le routeur — supprime la question au lieu de la resoudre.
- *
- * *Une classe de base commode dans une application peut etre un piege dans un
- * bundle : elle suppose un cablage qu'on ne fait plus.*
- *
- * ⚠ NI ROLE NI GABARIT EN DUR non plus : un bundle qui impose son role force
- * chaque projet a adopter une hierarchie de droits qu'il n'a pas choisie.
+ * The role and the parent template are configuration too: a bundle that
+ * hardcodes its role forces every project into a permission hierarchy it did
+ * not choose.
  */
 class ActivityController
 {
@@ -48,7 +43,7 @@ class ActivityController
         private IpIdentifier $identifier,
         private AuthorizationCheckerInterface $authChecker,
         private Environment $twig,
-        private UrlGeneratorInterface $routeur,
+        private UrlGeneratorInterface $router,
         private CsrfTokenManagerInterface $csrf,
         private string $role,
         private string $parentTemplate,
@@ -60,15 +55,15 @@ class ActivityController
     {
         $this->denyUnlessGranted();
 
-        $filter = $request->query->getString('filter', 'tout');
+        $filter = $request->query->getString('filter', 'all');
         $blocked = $this->blocklist->activeEntries();
         $events = $this->visits->findLatest($filter);
         $topIps = $this->visits->topSuspiciousIps(new \DateTimeImmutable('-7 days'));
 
-        /* ⚠ L'ORDRE COMPTE. Le nombre de resolutions inverses est plafonne par
-           affichage : les IP sur lesquelles on va DECIDER doivent etre nommees
-           en premier, meme si le plafond tombe avant la fin du journal. Une
-           adresse sans nom est une adresse qu'on bloque au hasard. */
+        /* Order matters here. The number of reverse lookups is capped per
+           render, so the addresses you are going to decide about must be named
+           first, even if the cap is reached before the end of the log. An
+           unnamed address is one you block at random. */
         $ips = [
             ...array_column($topIps, 'ip'),
             ...array_map(static fn (BlockedIp $b): string => $b->getIp(), $blocked),
@@ -92,8 +87,8 @@ class ActivityController
     }
 
     /**
-     * Blocage manuel. Permanent par defaut : une IP qu'on bloque a la main est
-     * un choix delibere, pas une detection.
+     * Manual block. Permanent by default: an address you block by hand is a
+     * deliberate decision, not a detection.
      */
     public function block(Request $request): Response
     {
@@ -107,9 +102,9 @@ class ActivityController
         } elseif ($this->blocklist->isAllowed($ip)) {
             $this->flash($request, 'error', sprintf('%s is allowlisted and cannot be blocked.', $ip));
         } elseif (null === $this->blocklist->block($ip, 'Manual block from the dashboard', BlockedIp::SOURCE_MANUAL)) {
-            /* ⚠ C'EST ICI QUE L'INCIDENT SE REJOUERAIT. Une IP de prestataire
-               critique, reconnue a son DNS inverse : la bloquer couperait une
-               fonction du site. Le bouton refuse, et il dit pourquoi. */
+            /* This is where the original incident would repeat. A critical
+               provider IP, recognised by reverse DNS: blocking it would break a
+               working part of the site. The button refuses, and says why. */
             $this->flash($request, 'error', sprintf(
                 '%s belongs to a provider the site depends on and cannot be blocked.',
                 $ip
@@ -151,11 +146,11 @@ class ActivityController
         );
     }
 
-    /** Les messages passent par la session, quand il y en a une. */
-    private function flash(Request $request, string $genre, string $message): void
+    /** Messages go through the session, when there is one. */
+    private function flash(Request $request, string $kind, string $message): void
     {
         if ($request->hasSession()) {
-            $request->getSession()->getFlashBag()->add('sentinelle_'.$genre, $message);
+            $request->getSession()->getFlashBag()->add('sentinelle_'.$kind, $message);
         }
     }
 }

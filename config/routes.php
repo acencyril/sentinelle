@@ -5,20 +5,20 @@ declare(strict_types=1);
 use Acencyril\SentinelleBundle\Controller\ActivityController;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
-/* Le préfixe est configurable : deux applications n'ont pas forcément la même
-   convention d'URL d'administration. */
+/* The prefix is configurable: two applications do not necessarily share the
+   same convention for admin URLs. */
 return static function (RoutingConfigurator $routes): void {
-    $prefixe = '%sentinelle.access.prefix%';
+    $prefix = '%sentinelle.access.prefix%';
 
-    $routes->add('sentinelle_activity', $prefixe.'/')
+    $routes->add('sentinelle_activity', $prefix.'/')
         ->controller([ActivityController::class, 'index'])
         ->methods(['GET']);
 
-    $routes->add('sentinelle_block', $prefixe.'/bloquer')
+    $routes->add('sentinelle_block', $prefix.'/block')
         ->controller([ActivityController::class, 'block'])
         ->methods(['POST']);
 
-    $routes->add('sentinelle_unblock', $prefixe.'/debloquer')
+    $routes->add('sentinelle_unblock', $prefix.'/unblock')
         ->controller([ActivityController::class, 'unblock'])
         ->methods(['POST']);
 };
